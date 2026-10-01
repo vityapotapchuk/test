@@ -9,7 +9,6 @@ import fs from 'node:fs';
 const { Pool } = pg;
 const app = Fastify({ logger: true });
 const HAS_DATABASE = Boolean(process.env.DATABASE_URL);
-console.log('[startup]', { databaseUrlConfigured: HAS_DATABASE, databaseUrlLength: process.env.DATABASE_URL?.length || 0 });
 const pool = HAS_DATABASE ? new Pool({ connectionString: process.env.DATABASE_URL }) : null;
 const PORT = Number(process.env.PORT || 8080);
 const COOKIE = process.env.SESSION_COOKIE_NAME || 'philly_admin_session';
@@ -60,6 +59,7 @@ async function requireAdmin(req, reply) {
   req.admin = result.rows[0];
 }
 
+app.get('/', async () => ({ ok: true, service: 'philly-cars-api', health: '/health' }));
 app.get('/health', async () => ({ ok: true, service: 'philly-cars-api', database: HAS_DATABASE ? 'connected' : 'not_connected' }));
 
 app.addHook('preHandler', async (req, reply) => {

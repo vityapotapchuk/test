@@ -136,6 +136,57 @@ app.delete('/api/v1/admin/session', { preHandler: requireAdmin }, async (req, re
   return { ok: true };
 });
 
+app.get('/api/v1/admin/vin/:vin', { preHandler: requireAdmin }, async (req, reply) => {
+  const vin = String(req.params.vin || '').trim().toUpperCase();
+  if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return reply.code(400).send({ error: 'invalid_vin' });
+  const url = 'https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended/' + encodeURIComponent(vin) + '?format=json';
+  const response = await fetch(url, { headers: { 'User-Agent': 'PhillyCars/1.0' } });
+  if (!response.ok) return reply.code(502).send({ error: 'vin_service_unavailable' });
+  const data = await response.json();
+  const r = data?.Results?.[0] || {};
+  const errorCode = String(r.ErrorCode || '');
+  if (!r.Make && !r.Model) return reply.code(422).send({ error: 'vin_not_decoded', detail: r.ErrorText || null });
+
+  const bodyRaw = r.BodyClass || '';
+  let bodyStyle = '';
+  if (/sport utility|suv|crossover/i.test(bodyRaw)) bodyStyle = 'SUV';
+  else if (/pickup/i.test(bodyRaw)) bodyStyle = 'Truck';
+  else if (/hatchback/i.test(bodyRaw)) bodyStyle = 'Hatchback';
+  else if (/coupe/i.test(bodyRaw)) bodyStyle = 'Coupe';
+  else if (/convertible|cabriolet/i.test(bodyRaw)) bodyStyle = 'Convertible';
+  else if (/wagon/i.test(bodyRaw)) bodyStyle = 'Wagon';
+  else if (/sedan/i.test(bodyRaw)) bodyStyle = 'Sedan';
+
+  const driveRaw = r.DriveType || '';
+  let drivetrain = '';
+  if (/4wd|4-wheel|4x4/i.test(driveRaw)) drivetrain = '4WD';
+  else if (/all-wheel|awd/i.test(driveRaw)) drivetrain = 'AWD';
+  else if (/front-wheel|fwd/i.test(driveRaw)) drivetrain = 'FWD';
+  else if (/rear-wheel|rwd|4x2/i.test(driveRaw)) drivetrain = 'RWD';
+
+  const displacement = r.DisplacementL ? String(r.DisplacementL) + 'L' : '';
+  const cyl = r.EngineCylinders ? ' ' + r.EngineCylinders + '-cyl' : '';
+  const engine = [displacement + cyl, r.EngineModel || ''].filter(Boolean).join(' · ');
+
+  return {
+    vin,
+    decoded: !errorCode || errorCode === '0',
+    year: Number(r.ModelYear) || null,
+    make: r.Make || '',
+    model: r.Model || '',
+    trim: r.Trim || r.Series || '',
+    bodyStyle,
+    bodyClass: bodyRaw,
+    drivetrain,
+    transmission: r.TransmissionStyle || '',
+    engine,
+    fuelType: r.FuelTypePrimary || '',
+    manufacturer: r.Manufacturer || '',
+    vehicleType: r.VehicleType || '',
+    errorText: r.ErrorText || ''
+  };
+});
+
 app.get('/api/v1/admin/vehicles', { preHandler: requireAdmin }, async () => {
   const result = await pool.query('SELECT * FROM vehicles ORDER BY created_at DESC');
   return { vehicles: result.rows };

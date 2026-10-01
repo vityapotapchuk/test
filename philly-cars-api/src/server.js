@@ -111,6 +111,8 @@ app.post('/api/v1/admin/session', async (req, reply) => {
   return { user: { email: result.rows[0].email, role: result.rows[0].role } };
 });
 
+app.get('/api/v1/admin/me', { preHandler: requireAdmin }, async req => ({ user: req.admin }));
+
 app.delete('/api/v1/admin/session', { preHandler: requireAdmin }, async (req, reply) => {
   const raw = req.cookies[COOKIE];
   await pool.query('DELETE FROM admin_sessions WHERE token_hash=$1', [hashToken(raw)]);

@@ -1,0 +1,17 @@
+{
+  "name": "philly-cars-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.0",
+    "@fastify/cors": "^11.0.0",
+    "bcryptjs": "^3.0.2",
+    "fastify": "^5.6.0",
+    "pg": "^8.16.3"
+  }
+}

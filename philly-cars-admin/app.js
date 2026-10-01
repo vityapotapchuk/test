@@ -63,12 +63,24 @@ const ALL_STATUSES=['Acquired','Reconditioning','Photo Needed','Ready to Publish
 const CHANNELS=[['website','Website'],['facebook','Facebook Marketplace'],['google','Google Vehicle Ads'],['cargurus','CarGurus'],['cars','Cars.com'],['autotrader','Autotrader']];
 function toast(msg){const el=document.createElement('div');el.className='toast';el.textContent=msg;document.getElementById('toast-root').appendChild(el);setTimeout(()=>el.remove(),2200)}
 function isLogged(){return sessionStorage.getItem('phillyAdminSession')==='1'}
-function login(){return `<main class="adminLogin"><form class="loginCard glass" onsubmit="adminLogin(event)"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="eyebrow" style="margin-top:28px">Dealer administration</div><h1>Welcome back.</h1><p class="muted">Admin is connected to the Philly Cars API. Until the database link is finished, it can fall back to local dev mode.</p><div class="field"><label>Email</label><input class="fieldInput" type="email" name="email" value="manager@phillycars.com" required></div><div class="field"><label>Password</label><input class="fieldInput" type="password" name="password" placeholder="Admin password" required></div><button class="btn blue">Sign In →</button></form></main>`}
+function login(){return `<main class="adminLogin"><form class="loginCard glass" onsubmit="adminLogin(event)"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="eyebrow" style="margin-top:28px">Dealer administration</div><h1>Welcome back.</h1><p class="muted">Admin is connected to the Philly Cars API. Until the database link is finished, it can fall back to local dev mode.</p><div class="field"><label>Email</label><input class="fieldInput" type="email" name="email" value="manager@phillycars.com" required></div><div class="field"><label>Password</label><input class="fieldInput" type="password" name="password" placeholder="12+ character password" minlength="12" required></div><button class="btn blue">Sign In →</button></form></main>`}
 window.adminLogin=async e=>{
   e.preventDefault();
   const fd=new FormData(e.target); const email=fd.get('email'); const password=fd.get('password');
   try{
-    await apiFetch('/api/v1/admin/session',{method:'POST',body:JSON.stringify({email,password})});
+    try{
+      await apiFetch('/api/v1/admin/session',{method:'POST',body:JSON.stringify({email,password})});
+    }catch(loginErr){
+      if(loginErr.status===401){
+        try{
+          await apiFetch('/api/v1/admin/bootstrap',{method:'POST',body:JSON.stringify({email,password})});
+          await apiFetch('/api/v1/admin/session',{method:'POST',body:JSON.stringify({email,password})});
+        }catch(bootstrapErr){
+          if(bootstrapErr.status===409) throw loginErr;
+          throw bootstrapErr;
+        }
+      }else throw loginErr;
+    }
     sessionStorage.setItem('phillyAdminSession','1');sessionStorage.setItem('phillyAdminApiSession','1');
     await loadCarsFromApi(); location.hash='/inventory'; render(); toast('Connected to Philly Cars database');
   }catch(err){

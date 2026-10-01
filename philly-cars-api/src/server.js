@@ -3,7 +3,7 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
-import pg from 'pg';
+import pg from 'pg';\nimport fs from 'node:fs';
 
 const { Pool } = pg;
 const app = Fastify({ logger: true });
@@ -25,7 +25,7 @@ await app.register(cors, {
 const hashToken = value => crypto.createHash('sha256').update(value).digest('hex');
 const slugify = s => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-async function bootstrapAdmin() {
+async function ensureSchema() {\n  if (!pool) return;\n  const sql = fs.readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');\n  await pool.query(sql);\n  app.log.info('Database schema ready');\n}\n\nasync function bootstrapAdmin() {
   const email = process.env.ADMIN_BOOTSTRAP_EMAIL;
   const password = process.env.ADMIN_BOOTSTRAP_PASSWORD;
   if (!email || !password || password.startsWith('change-this')) return;

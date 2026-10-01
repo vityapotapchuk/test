@@ -7,7 +7,7 @@ import pg from 'pg';
 
 const { Pool } = pg;
 const app = Fastify({ logger: true });
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const HAS_DATABASE = Boolean(process.env.DATABASE_URL);\nconst pool = HAS_DATABASE ? new Pool({ connectionString: process.env.DATABASE_URL }) : null;
 const PORT = Number(process.env.PORT || 8080);
 const COOKIE = process.env.SESSION_COOKIE_NAME || 'philly_admin_session';
 const TTL_DAYS = Number(process.env.SESSION_TTL_DAYS || 14);
@@ -48,7 +48,7 @@ async function requireAdmin(req, reply) {
   req.admin = result.rows[0];
 }
 
-app.get('/health', async () => ({ ok: true, service: 'philly-cars-api' }));
+app.get('/health', async () => ({ ok: true, service: 'philly-cars-api', database: HAS_DATABASE ? 'connected' : 'not_connected' }));\n\napp.addHook('preHandler', async (req, reply) => {\n  if (req.url === '/health') return;\n  if (!pool) return reply.code(503).send({ error: 'database_not_connected' });\n});
 
 app.get('/api/v1/vehicles', async req => {
   const { make, body, year, maxPrice, q } = req.query || {};

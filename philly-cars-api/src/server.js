@@ -14,14 +14,17 @@ const PORT = Number(process.env.PORT || 8080);
 const COOKIE = process.env.SESSION_COOKIE_NAME || 'philly_admin_session';
 const TTL_DAYS = Number(process.env.SESSION_TTL_DAYS || 14);
 const origins = [process.env.CLIENT_ORIGIN, process.env.ADMIN_ORIGIN].filter(Boolean);
+const devOriginAllowed = origin => /^https:\/\/philly-cars(?:-admin)?-dev\.onrender\.com$/i.test(origin || '');
 
 await app.register(cookie);
 await app.register(cors, {
   origin(origin, cb) {
-    if (!origin || origins.length === 0 || origins.includes(origin)) return cb(null, true);
-    cb(new Error('Origin not allowed'), false);
+    if (!origin || origins.includes(origin) || devOriginAllowed(origin)) return cb(null, true);
+    cb(null, false);
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET','POST','PATCH','PUT','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type']
 });
 
 const hashToken = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -122,7 +125,7 @@ app.post('/api/v1/admin/session', async (req, reply) => {
   const expires = new Date(Date.now() + TTL_DAYS * 86400000);
   await pool.query('DELETE FROM admin_sessions WHERE user_id=$1 OR expires_at <= now()', [result.rows[0].id]);
   await pool.query('INSERT INTO admin_sessions(user_id,token_hash,expires_at) VALUES($1,$2,$3)', [result.rows[0].id, hashToken(raw), expires]);
-  reply.setCookie(COOKIE, raw, { httpOnly: true, secure: true, sameSite: 'lax', path: '/', expires });
+  reply.setCookie(COOKIE, raw, { httpOnly: true, secure: true, sameSite: 'none', path: '/', expires });
   await pool.query('UPDATE admin_users SET last_login_at=now() WHERE id=$1', [result.rows[0].id]);
   return { user: { email: result.rows[0].email, role: result.rows[0].role } };
 });

@@ -96,6 +96,21 @@ app.post('/api/v1/leads', async (req, reply) => {
   return reply.code(201).send(result.rows[0]);
 });
 
+app.post('/api/v1/admin/bootstrap', async (req, reply) => {
+  const { email, password } = req.body || {};
+  if (!email || !password || String(password).length < 12) {
+    return reply.code(400).send({ error: 'email_and_12_char_password_required' });
+  }
+  const count = await pool.query('SELECT count(*)::int AS count FROM admin_users');
+  if (count.rows[0].count > 0) return reply.code(409).send({ error: 'admin_already_exists' });
+  const hash = await bcrypt.hash(password, 12);
+  const result = await pool.query(
+    'INSERT INTO admin_users(email,password_hash,role) VALUES($1,$2,$3) RETURNING id,email,role',
+    [String(email).trim().toLowerCase(), hash, 'owner']
+  );
+  return reply.code(201).send({ user: result.rows[0] });
+});
+
 app.post('/api/v1/admin/session', async (req, reply) => {
   const { email, password } = req.body || {};
   const result = await pool.query('SELECT * FROM admin_users WHERE lower(email)=lower($1) AND active=true', [email || '']);

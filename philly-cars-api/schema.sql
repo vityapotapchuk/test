@@ -1,7 +1,7 @@
 -- Philly Cars v4 self-hosted PostgreSQL blueprint
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-CREATE TABLE vehicles (
+CREATE TABLE IF NOT EXISTS vehicles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   slug text UNIQUE NOT NULL, stock_number text UNIQUE NOT NULL, vin text UNIQUE,
   year int NOT NULL, make text NOT NULL, model text NOT NULL, trim text,
@@ -16,12 +16,12 @@ CREATE TABLE vehicles (
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE vehicle_images (
+CREATE TABLE IF NOT EXISTS vehicle_images (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), vehicle_id uuid NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
   path text NOT NULL, alt_text text, sort_order int NOT NULL DEFAULT 0, is_cover boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE vehicle_publications (
+CREATE TABLE IF NOT EXISTS vehicle_publications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   vehicle_id uuid NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
   channel text NOT NULL CHECK (channel IN ('website','facebook','google','cargurus','cars','autotrader')),
@@ -31,26 +31,26 @@ CREATE TABLE vehicle_publications (
   UNIQUE(vehicle_id, channel)
 );
 
-CREATE TABLE leads (
+CREATE TABLE IF NOT EXISTS leads (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), type text NOT NULL, vehicle_id uuid REFERENCES vehicles(id) ON DELETE SET NULL,
   source text NOT NULL DEFAULT 'website', name text NOT NULL, phone text, email text, vin text, message text, payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   status text NOT NULL DEFAULT 'new' CHECK (status IN ('new','contacted','appointment','test_drive','negotiation','sold','lost')),
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE admin_users (
+CREATE TABLE IF NOT EXISTS admin_users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), email text UNIQUE NOT NULL, password_hash text NOT NULL,
   role text NOT NULL DEFAULT 'manager' CHECK (role IN ('owner','manager')), active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(), last_login_at timestamptz
 );
 
-CREATE TABLE admin_sessions (
+CREATE TABLE IF NOT EXISTS admin_sessions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
   token_hash text UNIQUE NOT NULL, expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX admin_sessions_expires_idx ON admin_sessions(expires_at);
-CREATE INDEX vehicles_status_idx ON vehicles(status);
-CREATE INDEX vehicles_make_model_idx ON vehicles(make, model);
-CREATE INDEX vehicle_publications_vehicle_idx ON vehicle_publications(vehicle_id);
-CREATE INDEX leads_status_created_idx ON leads(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS admin_sessions_expires_idx ON admin_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS vehicles_status_idx ON vehicles(status);
+CREATE INDEX IF NOT EXISTS vehicles_make_model_idx ON vehicles(make, model);
+CREATE INDEX IF NOT EXISTS vehicle_publications_vehicle_idx ON vehicle_publications(vehicle_id);
+CREATE INDEX IF NOT EXISTS leads_status_created_idx ON leads(status, created_at DESC);

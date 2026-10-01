@@ -1,3 +1,4 @@
+const API_BASE='https://philly-cars-api-dev.onrender.com';
 const REMOTE_IMAGES=["https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&w=1200&q=82", "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?auto=format&fit=crop&w=1200&q=82", "https://images.unsplash.com/photo-1504215680853-026ed2a45def?auto=format&fit=crop&w=1200&q=82", "https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&w=1200&q=82", "https://images.unsplash.com/photo-1511919884226-fd3cad34687c?auto=format&fit=crop&w=1200&q=82", "https://images.unsplash.com/photo-1494976388531-d1058494cdd8?auto=format&fit=crop&w=1200&q=82"];
 const seed=[
  {id:'bmw-330i',year:2023,make:'BMW',model:'330i xDrive',trim:'M Sport Package',mileage:28421,price:39900,body:'Sedan',color:'Black',interior:'Black',drive:'AWD',trans:'Automatic',engine:'2.0L Turbo I4',fuel:'Gasoline',status:'Available',image:'car1.jpg',stock:'PC1054',title:'Clean Title',features:['Apple CarPlay','Heated Seats','Backup Camera','Blind Spot Monitoring','Sunroof','Navigation','Leather Seats','Parking Sensors']},
@@ -17,6 +18,35 @@ const normalizeVehicle=v=>({vin:'',purchasePrice:0,auctionFees:0,transportCost:0
 let cars=(JSON.parse(localStorage.getItem('phillyAdminCarsV4')||'null')||seed).map(normalizeVehicle);
 let saved=new Set(JSON.parse(localStorage.getItem('phillySaved')||'[]'));
 const saveCars=()=>localStorage.setItem('phillyAdminCarsV4',JSON.stringify(cars));
+const API_TO_UI_STATUS={acquired:'Acquired',reconditioning:'Reconditioning',photo_needed:'Photo Needed',ready_to_publish:'Ready to Publish',available:'Available',deposit:'Deposit',sold:'Sold',archived:'Archived'};
+const UI_TO_API_STATUS=Object.fromEntries(Object.entries(API_TO_UI_STATUS).map(([k,v])=>[v,k]));
+const isApiSession=()=>sessionStorage.getItem('phillyAdminApiSession')==='1';
+async function apiFetch(path,options={}){
+  const res=await fetch(API_BASE+path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});
+  let body={}; try{body=await res.json()}catch{}
+  if(!res.ok){const err=new Error(body.error||('HTTP '+res.status));err.status=res.status;err.body=body;throw err}
+  return body;
+}
+function apiToUiVehicle(v){return normalizeVehicle({
+  id:v.id,year:v.year,make:v.make,model:v.model,trim:v.trim||'',mileage:v.mileage||0,price:v.price||0,
+  body:v.body_style||'SUV',color:v.exterior_color||'',interior:v.interior_color||'',drive:v.drivetrain||'',
+  trans:v.transmission||'',engine:v.engine||'',fuel:v.fuel_type||'Gasoline',status:API_TO_UI_STATUS[v.status]||'Acquired',
+  image:'car1.jpg',stock:v.stock_number||'',vin:v.vin||'',title:v.title_status||'Clean Title',
+  purchasePrice:v.purchase_price||0,auctionFees:v.auction_fees||0,transportCost:v.transport_cost||0,reconCost:v.recon_cost||0,otherCost:v.other_cost||0,
+  acquiredAt:v.acquired_at?String(v.acquired_at).slice(0,10):'',features:Array.isArray(v.features)?v.features:[]
+})}
+function uiToApiVehicle(v){return {
+  stockNumber:v.stock,vin:v.vin||null,year:+v.year,make:v.make,model:v.model,trim:v.trim||null,price:+v.price||0,mileage:+v.mileage||0,
+  purchasePrice:+v.purchasePrice||0,auctionFees:+v.auctionFees||0,transportCost:+v.transportCost||0,reconCost:+v.reconCost||0,otherCost:+v.otherCost||0,
+  acquiredAt:v.acquiredAt||null,bodyStyle:v.body||null,exteriorColor:v.color||null,interiorColor:v.interior||null,drivetrain:v.drive||null,
+  transmission:v.trans||null,engine:v.engine||null,fuelType:v.fuel||'Gasoline',titleStatus:v.title||null,status:UI_TO_API_STATUS[v.status]||'acquired',
+  description:v.description||null,features:v.features||[]
+}}
+async function loadCarsFromApi(){
+  if(!isApiSession()) return false;
+  try{const data=await apiFetch('/api/v1/admin/vehicles');cars=(data.vehicles||[]).map(apiToUiVehicle);saveCars();return true}
+  catch(e){if(e.status===401){sessionStorage.removeItem('phillyAdminApiSession');sessionStorage.removeItem('phillyAdminSession')}return false}
+}
 const DEMO_LEADS=[
  {kind:'Test Drive',name:'Marcus Hill',phone:'(215) 555-0198',vehicle:'2023 BMW 330i xDrive',date:'2026-09-24T13:20:00Z'},
  {kind:'Trade-In',name:'Olivia Reed',phone:'(267) 555-0114',vehicle:'2020 Audi A4',date:'2026-09-24T11:45:00Z'},
@@ -33,10 +63,26 @@ const ALL_STATUSES=['Acquired','Reconditioning','Photo Needed','Ready to Publish
 const CHANNELS=[['website','Website'],['facebook','Facebook Marketplace'],['google','Google Vehicle Ads'],['cargurus','CarGurus'],['cars','Cars.com'],['autotrader','Autotrader']];
 function toast(msg){const el=document.createElement('div');el.className='toast';el.textContent=msg;document.getElementById('toast-root').appendChild(el);setTimeout(()=>el.remove(),2200)}
 function isLogged(){return sessionStorage.getItem('phillyAdminSession')==='1'}
-function login(){return `<main class="adminLogin"><form class="loginCard glass" onsubmit="adminLogin(event)"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="eyebrow" style="margin-top:28px">Dealer administration</div><h1>Welcome back.</h1><p class="muted">Prototype login. Production authentication will run on the Philly Cars server.</p><div class="field"><label>Email</label><input class="fieldInput" type="email" name="email" value="manager@phillycars.com" required></div><div class="field"><label>Password</label><input class="fieldInput" type="password" name="password" value="demo" required></div><button class="btn blue">Sign In →</button></form></main>`}
-window.adminLogin=e=>{e.preventDefault();sessionStorage.setItem('phillyAdminSession','1');location.hash='/inventory';render()}
-window.logout=()=>{sessionStorage.removeItem('phillyAdminSession');location.hash='/';render()}
-function sidebar(active='inventory'){return `<aside class="adminSide"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="eyebrow" style="margin:24px 0 8px">Dealer OS</div><nav class="adminMenu"><a class="${active==='dashboard'?'active':''}" href="#/dashboard"><span>⌂</span> Dashboard</a><a class="${active==='inventory'?'active':''}" href="#/inventory"><span>▰</span> Inventory</a><a class="${active==='distribution'?'active':''}" href="#/distribution"><span>⇄</span> Distribution</a><a class="${active==='leads'?'active':''}" href="#/leads"><span>◎</span> Leads</a><a class="${active==='settings'?'active':''}" href="#/settings"><span>⚙</span> Settings</a></nav><div style="margin-top:auto"><button class="btn soft" style="width:100%" onclick="logout()">Sign Out</button></div></aside>`}
+function login(){return `<main class="adminLogin"><form class="loginCard glass" onsubmit="adminLogin(event)"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="eyebrow" style="margin-top:28px">Dealer administration</div><h1>Welcome back.</h1><p class="muted">Admin is connected to the Philly Cars API. Until the database link is finished, it can fall back to local dev mode.</p><div class="field"><label>Email</label><input class="fieldInput" type="email" name="email" value="manager@phillycars.com" required></div><div class="field"><label>Password</label><input class="fieldInput" type="password" name="password" placeholder="Admin password" required></div><button class="btn blue">Sign In →</button></form></main>`}
+window.adminLogin=async e=>{
+  e.preventDefault();
+  const fd=new FormData(e.target); const email=fd.get('email'); const password=fd.get('password');
+  try{
+    await apiFetch('/api/v1/admin/session',{method:'POST',body:JSON.stringify({email,password})});
+    sessionStorage.setItem('phillyAdminSession','1');sessionStorage.setItem('phillyAdminApiSession','1');
+    await loadCarsFromApi(); location.hash='/inventory'; render(); toast('Connected to Philly Cars database');
+  }catch(err){
+    if(err.status===503){
+      sessionStorage.setItem('phillyAdminSession','1');sessionStorage.removeItem('phillyAdminApiSession');
+      location.hash='/inventory';render();toast('Database link pending — local dev mode');
+    }else toast(err.status===401?'Invalid email or password':'API connection failed');
+  }
+}
+window.logout=async()=>{
+  if(isApiSession()){try{await apiFetch('/api/v1/admin/session',{method:'DELETE'})}catch{}}
+  sessionStorage.removeItem('phillyAdminApiSession');sessionStorage.removeItem('phillyAdminSession');location.hash='/';render()
+}
+function sidebar(active='inventory'){return `<aside class="adminSide"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="eyebrow" style="margin:24px 0 8px">Dealer OS</div><nav class="adminMenu"><a class="${active==='dashboard'?'active':''}" href="#/dashboard"><span>⌂</span> Dashboard</a><a class="${active==='inventory'?'active':''}" href="#/inventory"><span>▰</span> Inventory</a><a class="${active==='distribution'?'active':''}" href="#/distribution"><span>⇄</span> Distribution</a><a class="${active==='leads'?'active':''}" href="#/leads"><span>◎</span> Leads</a><a class="${active==='settings'?'active':''}" href="#/settings"><span>⚙</span> Settings</a></nav><div style="margin-top:auto"><div class="adminBadge" style="margin-bottom:10px;text-align:center">${isApiSession()?'API + DB':'Local dev'}</div><button class="btn soft" style="width:100%" onclick="logout()">Sign Out</button></div></aside>`}
 function mobileBar(){return `<div class="adminMobileBar"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="actions"><button class="smallBtn" onclick="location.hash='/inventory'">Inventory</button><button class="smallBtn" onclick="location.hash='/distribution'">Distribution</button></div></div>`}
 function dashboard(){
   const active=cars.filter(v=>!['Sold','Archived'].includes(v.status));
@@ -52,13 +98,38 @@ function distribution(){return `<div class="adminShell">${sidebar('distribution'
 
 function leads(){return `<div class="adminShell">${sidebar('leads')}<main class="adminMain">${mobileBar()}<div class="adminHead"><div><div class="eyebrow">Lead inbox</div><h1>Leads</h1><p class="muted">Test drives, trade-ins, sell requests and vehicle inquiries.</p></div></div><section class="adminPanel glass"><div class="tableWrap"><table class="adminTable"><thead><tr><th>Type</th><th>Name</th><th>Phone</th><th>Vehicle</th><th>Date</th><th>Status</th></tr></thead><tbody>${DEMO_LEADS.map(x=>`<tr><td>${x.kind}</td><td><b>${x.name}</b></td><td>${x.phone}</td><td>${x.vehicle}</td><td>${new Date(x.date).toLocaleDateString()}</td><td><span class="syncPill ready">New</span></td></tr>`).join('')}</tbody></table></div></section></main></div>`}
 
-function settings(){return `<div class="adminShell">${sidebar('settings')}<main class="adminMain">${mobileBar()}<div class="adminHead"><div><div class="eyebrow">Dealer settings</div><h1>Settings</h1><p class="muted">Contact information and API configuration used by the client website.</p></div></div><section class="formCard glass"><div class="formGrid"><div class="field"><label>Dealership name</label><input class="fieldInput" value="Philly Cars"></div><div class="field"><label>Phone</label><input class="fieldInput" placeholder="Add real dealership phone"></div><div class="field full"><label>Public website</label><input class="fieldInput" value="https://phillycars.com"></div><div class="field full"><label>API endpoint</label><input class="fieldInput" value="https://api.phillycars.com" disabled></div><div class="field full"><label>Inventory architecture</label><div class="notice">Admin → PostgreSQL → Website + marketplace feeds. Facebook starts as a manual workflow; other channels get connectors after onboarding.</div></div><button class="btn blue full" onclick="event.preventDefault();toast('Settings UI ready; backend save comes with API deployment')">Save Settings</button></div></section></main></div>`}
+function settings(){return `<div class="adminShell">${sidebar('settings')}<main class="adminMain">${mobileBar()}<div class="adminHead"><div><div class="eyebrow">Dealer settings</div><h1>Settings</h1><p class="muted">Contact information and API configuration used by the client website.</p></div></div><section class="formCard glass"><div class="formGrid"><div class="field"><label>Dealership name</label><input class="fieldInput" value="Philly Cars"></div><div class="field"><label>Phone</label><input class="fieldInput" placeholder="Add real dealership phone"></div><div class="field full"><label>Public website</label><input class="fieldInput" value="https://phillycars.com"></div><div class="field full"><label>API endpoint</label><input class="fieldInput" value="https://philly-cars-api-dev.onrender.com" disabled></div><div class="field full"><label>Inventory architecture</label><div class="notice">Admin → PostgreSQL → Website + marketplace feeds. Facebook starts as a manual workflow; other channels get connectors after onboarding.</div></div><button class="btn blue full" onclick="event.preventDefault();toast('Settings UI ready; backend save comes with API deployment')">Save Settings</button></div></section></main></div>`}
 
 window.openVehicleModal=(id='')=>{const v=normalizeVehicle(cars.find(x=>x.id===id)||{year:new Date().getFullYear(),make:'',model:'',trim:'',mileage:0,price:0,body:'SUV',color:'Black',interior:'Black',drive:'AWD',trans:'Automatic',engine:'',fuel:'Gasoline',status:'Acquired',stock:'PC'+String(1060+cars.length),title:'Clean Title',features:[]});document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="vehicleModal"><form class="modalCard" onsubmit="saveVehicle(event,'${id}')"><div class="modalHead"><div><div class="eyebrow">Master vehicle record</div><h2>${id?'Edit Vehicle':'Add Vehicle'}</h2></div><button type="button" class="smallBtn" onclick="vehicleModal.remove()">✕</button></div><div class="subhead">Vehicle identity</div><div class="formGrid">${[['year','Year',v.year],['make','Make',v.make],['model','Model',v.model],['trim','Trim',v.trim],['stock','Stock Number',v.stock],['vin','VIN',v.vin],['price','Retail Price',v.price],['mileage','Mileage',v.mileage],['engine','Engine',v.engine],['color','Exterior Color',v.color],['interior','Interior Color',v.interior],['acquiredAt','Acquired Date',v.acquiredAt]].map(([n,l,val])=>`<div class="field"><label>${l}</label><input class="fieldInput" name="${n}" value="${val??''}" ${['make','model','price','stock'].includes(n)?'required':''} ${n==='vin'?'maxlength="17"':''} ${n==='acquiredAt'?'type="date"':''}></div>`).join('')}<div class="field"><label>Body Style</label><select class="fieldInput" name="body">${['SUV','Sedan','Coupe','Truck','Hatchback','EV','Wagon','Convertible'].map(x=>`<option ${v.body===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Drivetrain</label><select class="fieldInput" name="drive">${['AWD','RWD','FWD','4WD'].map(x=>`<option ${v.drive===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Title Status</label><select class="fieldInput" name="title">${['Clean Title','Rebuilt Title','Salvage Title','Other'].map(x=>`<option ${v.title===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Workflow Status</label><select class="fieldInput" name="status">${ALL_STATUSES.map(x=>`<option ${v.status===x?'selected':''}>${x}</option>`).join('')}</select></div></div><div class="subhead">Cost & margin</div><div class="formGrid">${[['purchasePrice','Purchase Price',v.purchasePrice],['auctionFees','Auction / Buyer Fees',v.auctionFees],['transportCost','Transport',v.transportCost],['reconCost','Reconditioning',v.reconCost],['otherCost','Other Cost',v.otherCost]].map(([n,l,val])=>`<div class="field"><label>${l}</label><input class="fieldInput" name="${n}" inputmode="numeric" value="${val||0}"></div>`).join('')}<div class="field marginPreview"><label>Current Gross</label><div class="fieldValue">${money(gross(v))}</div></div><div class="field full"><label>Features (comma separated)</label><input class="fieldInput" name="features" value="${(v.features||[]).join(', ')}"></div><div class="field full"><label>Vehicle Photo</label><div class="photoDrop"><input type="file" accept="image/*" onchange="previewUpload(event)"><div class="muted">Preview storage only in this test build. Production photos will use server storage.</div><div id="photoPreview" class="previewImage ${v.customImage||v.image?'':'hide'}" style="background-image:url('${img(v)}')"></div><input type="hidden" id="customImage" name="customImage" value="${v.customImage||''}"></div></div><button class="btn blue full">${id?'Save Changes':'Create Vehicle'} →</button></div></form></div>`)}
 
 window.previewUpload=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{document.getElementById('customImage').value=r.result;const p=document.getElementById('photoPreview');p.style.backgroundImage=`url('${r.result}')`;p.classList.remove('hide')};r.readAsDataURL(f)}
-window.saveVehicle=(e,id)=>{e.preventDefault();const d=Object.fromEntries(new FormData(e.target));['year','price','mileage','purchasePrice','auctionFees','transportCost','reconCost','otherCost'].forEach(k=>d[k]=+d[k]||0);d.vin=(d.vin||'').trim().toUpperCase();d.features=(d.features||'').split(',').map(x=>x.trim()).filter(Boolean);if(id){cars=cars.map(x=>x.id===id?normalizeVehicle({...x,...d}):x)}else{d.id=`${d.make}-${d.model}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9]+/g,'-');d.image='car1.jpg';d.fuel='Gasoline';d.channels={website:'Ready',facebook:'Manual',google:'Not connected',cargurus:'Not connected',cars:'Not connected',autotrader:'Not connected'};cars.unshift(normalizeVehicle(d))}saveCars();vehicleModal.remove();render();toast('Vehicle saved')}
-window.duplicateVehicle=id=>{const v=cars.find(x=>x.id===id);if(!v)return;cars.unshift(normalizeVehicle({...v,id:v.id+'-'+Date.now(),vin:'',stock:'PC'+String(1060+cars.length),status:'Acquired',customImage:''}));saveCars();render();toast('Vehicle duplicated')}
-window.archiveVehicle=id=>{const v=cars.find(x=>x.id===id);if(v&&confirm('Archive this vehicle?')){v.status='Archived';saveCars();render();toast('Vehicle archived')}}
+window.saveVehicle=async(e,id)=>{
+  e.preventDefault();const d=Object.fromEntries(new FormData(e.target));
+  ['year','price','mileage','purchasePrice','auctionFees','transportCost','reconCost','otherCost'].forEach(k=>d[k]=+d[k]||0);
+  d.vin=(d.vin||'').trim().toUpperCase();d.features=(d.features||'').split(',').map(x=>x.trim()).filter(Boolean);
+  const current=id?cars.find(x=>x.id===id):{};const next=normalizeVehicle({...current,...d,fuel:current?.fuel||'Gasoline'});
+  if(isApiSession()){
+    try{
+      const saved=await apiFetch(id?'/api/v1/admin/vehicles/'+id:'/api/v1/admin/vehicles',{method:id?'PATCH':'POST',body:JSON.stringify(uiToApiVehicle(next))});
+      const mapped=apiToUiVehicle(saved);
+      cars=id?cars.map(x=>x.id===id?mapped:x):[mapped,...cars];saveCars();vehicleModal.remove();render();toast('Vehicle saved to database');return;
+    }catch(err){toast('Database save failed: '+(err.body?.error||err.message));return}
+  }
+  if(id){cars=cars.map(x=>x.id===id?next:x)}else{next.id=`${d.make}-${d.model}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9]+/g,'-');next.image='car1.jpg';next.channels={website:'Ready',facebook:'Manual',google:'Not connected',cargurus:'Not connected',cars:'Not connected',autotrader:'Not connected'};cars.unshift(next)}
+  saveCars();vehicleModal.remove();render();toast('Vehicle saved locally')
+}
+window.duplicateVehicle=async id=>{
+  const v=cars.find(x=>x.id===id);if(!v)return;
+  const copy=normalizeVehicle({...v,id:'',vin:'',stock:'PC'+String(1060+cars.length),status:'Acquired',customImage:''});
+  if(isApiSession()){
+    try{const saved=await apiFetch('/api/v1/admin/vehicles',{method:'POST',body:JSON.stringify(uiToApiVehicle(copy))});cars.unshift(apiToUiVehicle(saved));saveCars();render();toast('Vehicle duplicated in database');return}catch(err){toast('Duplicate failed')}
+  }
+  copy.id=v.id+'-'+Date.now();cars.unshift(copy);saveCars();render();toast('Vehicle duplicated locally')
+}
+window.archiveVehicle=async id=>{
+  const v=cars.find(x=>x.id===id);if(!v||!confirm('Archive this vehicle?'))return;
+  if(isApiSession()){try{await apiFetch('/api/v1/admin/vehicles/'+id+'/archive',{method:'POST'});v.status='Archived';saveCars();render();toast('Vehicle archived in database');return}catch(err){toast('Archive failed');return}}
+  v.status='Archived';saveCars();render();toast('Vehicle archived locally')
+}
 function render(){if(!isLogged()){document.getElementById('app').innerHTML=login();return}const path=(location.hash.slice(1)||'/inventory').split('?')[0];let html=path==='/dashboard'?dashboard():path==='/distribution'?distribution():path==='/leads'?leads():path==='/settings'?settings():inventoryAdmin();document.getElementById('app').innerHTML=html;if(path==='/inventory'||path==='/'){setTimeout(renderAdminRows,0)}if(path==='/dashboard'){setTimeout(()=>{const e=document.getElementById('recentRows');if(e)e.innerHTML=cars.slice(0,5).map(v=>`<div class="vehicleCell recentLine"><div class="miniCar" style="background-image:url('${img(v)}')"></div><div style="flex:1"><b>${v.year} ${v.make} ${v.model}</b><br><span class="muted">${v.stock} · ${money(v.price)} · cost ${money(totalCost(v))}</span></div><span class="status ${slugStatus(v.status)}">${v.status}</span></div>`).join('')},0)}}
 window.addEventListener('hashchange',render);render();

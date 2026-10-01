@@ -3,11 +3,13 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
-import pg from 'pg';\nimport fs from 'node:fs';
+import pg from 'pg';
+import fs from 'node:fs';
 
 const { Pool } = pg;
 const app = Fastify({ logger: true });
-const HAS_DATABASE = Boolean(process.env.DATABASE_URL);\nconst pool = HAS_DATABASE ? new Pool({ connectionString: process.env.DATABASE_URL }) : null;
+const HAS_DATABASE = Boolean(process.env.DATABASE_URL);
+const pool = HAS_DATABASE ? new Pool({ connectionString: process.env.DATABASE_URL }) : null;
 const PORT = Number(process.env.PORT || 8080);
 const COOKIE = process.env.SESSION_COOKIE_NAME || 'philly_admin_session';
 const TTL_DAYS = Number(process.env.SESSION_TTL_DAYS || 14);
@@ -25,7 +27,15 @@ await app.register(cors, {
 const hashToken = value => crypto.createHash('sha256').update(value).digest('hex');
 const slugify = s => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-async function ensureSchema() {\n  if (!pool) return;\n  const sql = fs.readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');\n  await pool.query(sql);\n  app.log.info('Database schema ready');\n}\n\nasync function bootstrapAdmin() {
+async function ensureSchema() {
+  if (!pool) return;
+  const sql = fs.readFileSync(new URL('../schema.sql', import.meta.url), 'utf8');
+  await pool.query(sql);
+  app.log.info('Database schema ready');
+}
+
+async function bootstrapAdmin() {
+  if (!pool) return;
   const email = process.env.ADMIN_BOOTSTRAP_EMAIL;
   const password = process.env.ADMIN_BOOTSTRAP_PASSWORD;
   if (!email || !password || password.startsWith('change-this')) return;
@@ -37,6 +47,7 @@ async function ensureSchema() {\n  if (!pool) return;\n  const sql = fs.readFile
 }
 
 async function requireAdmin(req, reply) {
+  if (!pool) return reply.code(503).send({ error: 'database_not_connected' });
   const raw = req.cookies[COOKIE];
   if (!raw) return reply.code(401).send({ error: 'unauthorized' });
   const result = await pool.query(`
@@ -48,7 +59,12 @@ async function requireAdmin(req, reply) {
   req.admin = result.rows[0];
 }
 
-app.get('/health', async () => ({ ok: true, service: 'philly-cars-api', database: HAS_DATABASE ? 'connected' : 'not_connected' }));\n\napp.addHook('preHandler', async (req, reply) => {\n  if (req.url === '/health') return;\n  if (!pool) return reply.code(503).send({ error: 'database_not_connected' });\n});
+app.get('/health', async () => ({ ok: true, service: 'philly-cars-api', database: HAS_DATABASE ? 'connected' : 'not_connected' }));
+
+app.addHook('preHandler', async (req, reply) => {
+  if (req.url === '/health') return;
+  if (!pool) return reply.code(503).send({ error: 'database_not_connected' });
+});
 
 app.get('/api/v1/vehicles', async req => {
   const { make, body, year, maxPrice, q } = req.query || {};
@@ -173,5 +189,6 @@ app.patch('/api/v1/admin/leads/:id', { preHandler: requireAdmin }, async (req, r
   return result.rows[0];
 });
 
+await ensureSchema();
 await bootstrapAdmin();
 await app.listen({ port: PORT, host: '0.0.0.0' });

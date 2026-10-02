@@ -37,23 +37,6 @@ async function ensureSchema() {
   app.log.info('Database schema ready');
 }
 
-async function logInventorySummary() {
-  if (!pool) return;
-  const latest = await pool.query(`
-    SELECT stock_number, year, make, model, status
-    FROM vehicles
-    ORDER BY created_at DESC
-    LIMIT 1
-  `);
-  const counts = await pool.query(`
-    SELECT status, count(*)::int AS count
-    FROM vehicles
-    GROUP BY status
-    ORDER BY status
-  `);
-  app.log.info({ latestVehicle: latest.rows[0] || null, inventoryByStatus: counts.rows }, 'Inventory summary');
-}
-
 async function bootstrapAdmin() {
   if (!pool) return;
   const email = process.env.ADMIN_BOOTSTRAP_EMAIL;
@@ -279,6 +262,5 @@ app.patch('/api/v1/admin/leads/:id', { preHandler: requireAdmin }, async (req, r
 });
 
 await ensureSchema();
-await logInventorySummary();
 await bootstrapAdmin();
 await app.listen({ port: PORT, host: '0.0.0.0' });

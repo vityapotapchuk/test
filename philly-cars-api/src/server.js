@@ -145,11 +145,28 @@ async function decodeVinForImport(vin) {
     make:r.Make||'',
     model:r.Model||'',
     trim:r.Trim||r.Series||'',
+    series:r.Series||'',
     bodyStyle,
+    bodyClass:bodyRaw,
     drivetrain,
     transmission:r.TransmissionStyle||'',
+    transmissionSpeeds:Number(r.TransmissionSpeeds)||null,
     engine,
-    fuelType:r.FuelTypePrimary||''
+    engineCylinders:Number(r.EngineCylinders)||null,
+    engineHP:Number(r.EngineHP)||null,
+    displacementL:Number(r.DisplacementL)||null,
+    turbo:r.Turbo||'',
+    fuelType:r.FuelTypePrimary||'',
+    fuelTypeSecondary:r.FuelTypeSecondary||'',
+    electrificationLevel:r.ElectrificationLevel||'',
+    doors:Number(r.Doors)||null,
+    seats:Number(r.Seats)||null,
+    seatRows:Number(r.SeatRows)||null,
+    manufacturer:r.Manufacturer||'',
+    vehicleType:r.VehicleType||'',
+    plantCity:r.PlantCity||'',
+    plantState:r.PlantState||'',
+    plantCountry:r.PlantCountry||''
   };
 }
 
@@ -212,10 +229,19 @@ function buildVehicleDescription(vehicle,{carfaxSummary=null,vinDecode=null,reca
   if(specBits.length){
     specs=`Official NHTSA VIN data and the vehicle record identify ${specBits.join(', ')}.`;
     const extra=[];
-    if(vinDecode?.manufacturer)extra.push('manufacturer: '+vinDecode.manufacturer);
-    if(vinDecode?.vehicleType)extra.push('vehicle type: '+vinDecode.vehicleType);
-    if(vinDecode?.bodyClass && vinDecode.bodyClass!==body)extra.push('NHTSA body class: '+vinDecode.bodyClass);
-    if(extra.length)specs+=' '+extra.join('; ')+'.';
+    if(vinDecode?.engineHP)extra.push(vinDecode.engineHP+' hp');
+    if(vinDecode?.engineCylinders)extra.push(vinDecode.engineCylinders+' cylinders');
+    if(vinDecode?.transmissionSpeeds)extra.push(vinDecode.transmissionSpeeds+' transmission speeds');
+    if(vinDecode?.doors)extra.push(vinDecode.doors+' doors');
+    if(vinDecode?.seats)extra.push(vinDecode.seats+' seats');
+    if(vinDecode?.seatRows)extra.push(vinDecode.seatRows+' seating rows');
+    if(vinDecode?.turbo && !/^not applicable$/i.test(vinDecode.turbo))extra.push('turbo: '+vinDecode.turbo);
+    if(vinDecode?.electrificationLevel)extra.push(vinDecode.electrificationLevel);
+    if(vinDecode?.fuelTypeSecondary)extra.push('secondary fuel: '+vinDecode.fuelTypeSecondary);
+    if(extra.length)specs+=' Additional NHTSA-decoded specifications include '+extra.join(', ')+'.';
+    const origin=[vinDecode?.plantCity,vinDecode?.plantState,vinDecode?.plantCountry].filter(Boolean).join(', ');
+    if(origin)specs+=' NHTSA identifies the manufacturing location as '+origin+'.';
+    if(vinDecode?.manufacturer)specs+=' Manufacturer: '+vinDecode.manufacturer+'.';
   }
 
   let history='';

@@ -21,6 +21,9 @@ const saveCars=()=>localStorage.setItem('phillyAdminCarsV4',JSON.stringify(cars)
 const API_TO_UI_STATUS={acquired:'Acquired',reconditioning:'Reconditioning',photo_needed:'Photo Needed',ready_to_publish:'Ready to Publish',available:'Available',deposit:'Deposit',sold:'Sold',archived:'Archived'};
 const UI_TO_API_STATUS=Object.fromEntries(Object.entries(API_TO_UI_STATUS).map(([k,v])=>[v,k]));
 const isApiSession=()=>sessionStorage.getItem('phillyAdminApiSession')==='1';
+let adminAccounts=[];
+let currentAdminId='';
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const getAdminToken=()=>sessionStorage.getItem('phillyAdminToken')||'';
 async function apiFetch(path,options={}){
   const isForm=options.body instanceof FormData;
@@ -151,7 +154,7 @@ window.logout=async()=>{
   if(isApiSession()){try{await apiFetch('/api/v1/admin/session',{method:'DELETE'})}catch{}}
   sessionStorage.removeItem('phillyAdminToken');sessionStorage.removeItem('phillyAdminApiSession');sessionStorage.removeItem('phillyAdminSession');location.hash='/';render()
 }
-function sidebar(active='inventory'){return `<aside class="adminSide"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="eyebrow" style="margin:24px 0 8px">Dealer OS</div><nav class="adminMenu"><a class="${active==='dashboard'?'active':''}" href="#/dashboard"><span>⌂</span> Dashboard</a><a class="${active==='inventory'?'active':''}" href="#/inventory"><span>▰</span> Inventory</a><a class="${active==='distribution'?'active':''}" href="#/distribution"><span>⇄</span> Distribution</a><a class="${active==='leads'?'active':''}" href="#/leads"><span>◎</span> Leads</a><a class="${active==='settings'?'active':''}" href="#/settings"><span>⚙</span> Settings</a></nav><div style="margin-top:auto"><div class="adminBadge" style="margin-bottom:10px;text-align:center">${isApiSession()?'API + DB':'Local dev'}</div><button class="btn soft" style="width:100%" onclick="logout()">Sign Out</button></div></aside>`}
+function sidebar(active='inventory'){return `<aside class="adminSide"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="eyebrow" style="margin:24px 0 8px">Dealer OS</div><nav class="adminMenu"><a class="${active==='dashboard'?'active':''}" href="#/dashboard"><span>⌂</span> Dashboard</a><a class="${active==='inventory'?'active':''}" href="#/inventory"><span>▰</span> Inventory</a><a class="${active==='distribution'?'active':''}" href="#/distribution"><span>⇄</span> Distribution</a><a class="${active==='leads'?'active':''}" href="#/leads"><span>◎</span> Leads</a><a class="${active==='accounts'?'active':''}" href="#/accounts"><span>◉</span> Accounts</a><a class="${active==='settings'?'active':''}" href="#/settings"><span>⚙</span> Settings</a></nav><div style="margin-top:auto"><div class="adminBadge" style="margin-bottom:10px;text-align:center">${isApiSession()?'API + DB':'Local dev'}</div><button class="btn soft" style="width:100%" onclick="logout()">Sign Out</button></div></aside>`}
 function mobileBar(){
   const current=(location.hash||'#/inventory').replace('#/','').split('?')[0]||'inventory';
   const item=(key,label,icon)=>`<a class="${current===key?'active':''}" href="#/${key}" onclick="closeMobileMenu()"><span>${icon}</span><b>${label}</b></a>`;
@@ -173,6 +176,7 @@ function mobileBar(){
       ${item('inventory','Inventory','▰')}
       ${item('distribution','Distribution','⇄')}
       ${item('leads','Leads','◎')}
+      ${item('accounts','Accounts','◉')}
       ${item('settings','Settings','⚙')}
     </nav>
     <div class="mobileMenuFooter">
@@ -213,6 +217,119 @@ window.renderAdminRows=()=>{const el=document.getElementById('adminRows');if(!el
 function distribution(){return `<div class="adminShell">${sidebar('distribution')}<main class="adminMain">${mobileBar()}<div class="adminHead"><div><div class="eyebrow">Inventory syndication</div><h1>Distribution</h1><p class="muted">Website is the source of truth. Marketplace connectors will read from the same vehicle record.</p></div><div class="adminTopActions"><span class="adminBadge">Integration foundation</span></div></div><section class="channelCards">${CHANNELS.map(([key,label])=>`<div class="channelCard glass"><div><div class="eyebrow">${key==='website'?'Primary':'Channel'}</div><h3>${label}</h3></div><span class="channelState ${key==='website'?'live':'setup'}">${key==='website'?'Ready':'Not connected'}</span><p class="muted">${key==='website'?'Publishes from Philly Cars inventory.':key==='facebook'?'Manual publishing workflow first; partner integration later.':'Feed/API connector will be added after dealer account onboarding.'}</p></div>`).join('')}</section><section class="adminPanel glass" style="margin-top:18px"><div class="sectionHead"><div><div class="eyebrow">Vehicle readiness</div><h2>Publishing matrix</h2></div></div><div class="tableWrap"><table class="adminTable syncTable"><thead><tr><th>Vehicle</th>${CHANNELS.map(x=>`<th>${x[1]}</th>`).join('')}</tr></thead><tbody>${cars.filter(v=>v.status!=='Archived').map(v=>`<tr><td><b>${v.year} ${v.make} ${v.model}</b><br><span class="muted">${v.stock}</span></td>${CHANNELS.map(([key])=>`<td><span class="syncPill ${key==='website'&&ACTIVE_STATUSES.includes(v.status)?'ready':key==='facebook'?'manual':'off'}">${key==='website'&&ACTIVE_STATUSES.includes(v.status)?'Ready':key==='facebook'?'Manual':'Not connected'}</span></td>`).join('')}</tr>`).join('')}</tbody></table></div></section></main></div>`}
 
 function leads(){return `<div class="adminShell">${sidebar('leads')}<main class="adminMain">${mobileBar()}<div class="adminHead"><div><div class="eyebrow">Lead inbox</div><h1>Leads</h1><p class="muted">Test drives, trade-ins, sell requests and vehicle inquiries.</p></div></div><section class="adminPanel glass"><div class="tableWrap"><table class="adminTable"><thead><tr><th>Type</th><th>Name</th><th>Phone</th><th>Vehicle</th><th>Date</th><th>Status</th></tr></thead><tbody>${DEMO_LEADS.map(x=>`<tr><td>${x.kind}</td><td><b>${x.name}</b></td><td>${x.phone}</td><td>${x.vehicle}</td><td>${new Date(x.date).toLocaleDateString()}</td><td><span class="syncPill ready">New</span></td></tr>`).join('')}</tbody></table></div></section></main></div>`}
+
+function accounts(){
+  return `<div class="adminShell">${sidebar('accounts')}<main class="adminMain">${mobileBar()}
+    <div class="adminHead">
+      <div><div class="eyebrow">Access control</div><h1>Admin Accounts</h1><p class="muted">Create and manage access to Philly Cars Dealer OS.</p></div>
+      <div class="adminTopActions"><button id="addAccountBtn" class="btn blue" onclick="openAccountModal()" disabled>+ Add Account</button></div>
+    </div>
+    <section class="adminPanel glass">
+      <div id="accountsStatus" class="muted">Loading accounts…</div>
+      <div class="tableWrap"><table class="adminTable accountsTable">
+        <thead><tr><th>Account</th><th>Role</th><th>Status</th><th>Last login</th><th>Created</th><th></th></tr></thead>
+        <tbody id="accountRows"></tbody>
+      </table></div>
+    </section>
+  </main></div>`;
+}
+
+async function loadAccounts(){
+  const status=document.getElementById('accountsStatus');
+  const rows=document.getElementById('accountRows');
+  const addBtn=document.getElementById('addAccountBtn');
+  if(!isApiSession()){
+    if(status)status.textContent='Accounts require database connection.';
+    return;
+  }
+  try{
+    const data=await apiFetch('/api/v1/admin/accounts');
+    adminAccounts=data.accounts||[];
+    currentAdminId=data.currentUserId||'';
+    if(status)status.textContent=adminAccounts.length+' account'+(adminAccounts.length===1?'':'s');
+    if(addBtn)addBtn.disabled=false;
+    if(rows)rows.innerHTML=adminAccounts.map(a=>{
+      const last=a.last_login_at?new Date(a.last_login_at).toLocaleString():'Never';
+      const created=a.created_at?new Date(a.created_at).toLocaleDateString():'—';
+      return `<tr>
+        <td><div class="accountIdentity"><div class="accountAvatar">${esc((a.email||'?')[0]).toUpperCase()}</div><div><b>${esc(a.email)}</b>${a.id===currentAdminId?'<br><span class="muted">Current account</span>':''}</div></div></td>
+        <td><span class="accountRole ${a.role}">${esc(a.role)}</span></td>
+        <td><span class="syncPill ${a.active?'ready':'off'}">${a.active?'Active':'Disabled'}</span></td>
+        <td>${esc(last)}</td><td>${esc(created)}</td>
+        <td><button class="smallBtn" onclick="openAccountModal('${a.id}')">Edit</button></td>
+      </tr>`;
+    }).join('');
+  }catch(err){
+    if(rows)rows.innerHTML='';
+    if(addBtn)addBtn.disabled=true;
+    if(status)status.innerHTML=err.status===403
+      ?'<div class="notice"><b>Owner access required.</b><br>Managers can use the Dealer OS but cannot manage administrator accounts.</div>'
+      :'<div class="notice">Could not load accounts.</div>';
+  }
+}
+
+window.openAccountModal=(id='')=>{
+  const account=id?adminAccounts.find(a=>a.id===id):null;
+  if(id&&!account){toast('Account not found');return}
+  const isEdit=Boolean(account);
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="accountModal">
+    <form class="modalCard accountModalCard" onsubmit="saveAdminAccount(event,'${id}')">
+      <div class="modalHead"><div><div class="eyebrow">Access control</div><h2>${isEdit?'Edit Account':'Add Account'}</h2></div><button type="button" class="smallBtn" onclick="accountModal.remove()">✕</button></div>
+      <div class="formGrid">
+        <div class="field full"><label>Email</label><input class="fieldInput" name="email" type="email" autocomplete="username" value="${esc(account?.email||'')}" required></div>
+        <div class="field"><label>Role</label><select class="fieldInput" name="role"><option value="manager" ${account?.role==='manager'?'selected':''}>Manager</option><option value="owner" ${account?.role==='owner'?'selected':''}>Owner</option></select></div>
+        <div class="field"><label>Status</label><select class="fieldInput" name="active"><option value="true" ${account?.active!==false?'selected':''}>Active</option><option value="false" ${account?.active===false?'selected':''}>Disabled</option></select></div>
+        <div class="field full"><label>${isEdit?'New password (leave blank to keep current)':'Password'}</label><input class="fieldInput" name="password" type="password" autocomplete="new-password" minlength="12" ${isEdit?'':'required'} placeholder="${isEdit?'No change unless entered':'Minimum 12 characters'}"></div>
+      </div>
+      ${isEdit&&account.id===currentAdminId?'<div class="notice">Changing your own password, role, or status will sign this session out for security.</div>':''}
+      <button class="btn blue full">${isEdit?'Save Changes':'Create Account'}</button>
+      <div id="accountSaveStatus" class="muted"></div>
+    </form>
+  </div>`);
+};
+
+window.saveAdminAccount=async(e,id='')=>{
+  e.preventDefault();
+  const form=e.target;
+  const fd=new FormData(form);
+  const body={
+    email:String(fd.get('email')||'').trim(),
+    role:String(fd.get('role')||'manager'),
+    active:fd.get('active')==='true'
+  };
+  const password=String(fd.get('password')||'');
+  if(password)body.password=password;
+  const status=document.getElementById('accountSaveStatus');
+  const btn=form.querySelector('button.btn.blue');
+  btn.disabled=true;
+  if(status)status.textContent='Saving…';
+  try{
+    const result=await apiFetch(id?'/api/v1/admin/accounts/'+id:'/api/v1/admin/accounts',{
+      method:id?'PATCH':'POST',
+      body:JSON.stringify(body)
+    });
+    if(result.reauthRequired){
+      document.getElementById('accountModal')?.remove();
+      toast('Account updated. Sign in again.');
+      setTimeout(()=>logout(),500);
+      return;
+    }
+    document.getElementById('accountModal')?.remove();
+    await loadAccounts();
+    toast(id?'Account updated':'Account created');
+  }catch(err){
+    const messages={
+      owner_required:'Owner access required',
+      valid_email_required:'Enter a valid email',
+      password_min_12:'Password must be at least 12 characters',
+      email_already_exists:'An account with this email already exists',
+      last_owner_required:'At least one active owner must remain',
+      account_not_found:'Account not found'
+    };
+    if(status)status.textContent=messages[err.body?.error]||('Save failed: '+(err.body?.error||err.message));
+    btn.disabled=false;
+  }
+};
 
 function settings(){return `<div class="adminShell">${sidebar('settings')}<main class="adminMain">${mobileBar()}<div class="adminHead"><div><div class="eyebrow">Dealer settings</div><h1>Settings</h1><p class="muted">Contact information and API configuration used by the client website.</p></div></div><section class="formCard glass"><div class="formGrid"><div class="field"><label>Dealership name</label><input class="fieldInput" value="Philly Cars"></div><div class="field"><label>Phone</label><input class="fieldInput" placeholder="Add real dealership phone"></div><div class="field full"><label>Public website</label><input class="fieldInput" value="https://phillycars.com"></div><div class="field full"><label>API endpoint</label><input class="fieldInput" value="https://philly-cars-api-dev.onrender.com" disabled></div><div class="field full"><label>Inventory architecture</label><div class="notice">Admin → PostgreSQL → Website + marketplace feeds. Facebook starts as a manual workflow; other channels get connectors after onboarding.</div></div><button class="btn blue full" onclick="event.preventDefault();toast('Settings UI ready; backend save comes with API deployment')">Save Settings</button></div></section></main></div>`}
 
@@ -394,5 +511,5 @@ window.archiveVehicle=async id=>{
   if(isApiSession()){try{await apiFetch('/api/v1/admin/vehicles/'+id+'/archive',{method:'POST'});v.status='Archived';saveCars();render();toast('Vehicle archived in database');return}catch(err){toast('Archive failed');return}}
   v.status='Archived';saveCars();render();toast('Vehicle archived locally')
 }
-function render(){if(!isLogged()){document.getElementById('app').innerHTML=login();return}const path=(location.hash.slice(1)||'/inventory').split('?')[0];let html=path==='/dashboard'?dashboard():path==='/distribution'?distribution():path==='/leads'?leads():path==='/settings'?settings():inventoryAdmin();document.getElementById('app').innerHTML=html;if(path==='/inventory'||path==='/'){setTimeout(renderAdminRows,0)}if(path==='/dashboard'){setTimeout(()=>{const e=document.getElementById('recentRows');if(e)e.innerHTML=cars.slice(0,5).map(v=>`<div class="vehicleCell recentLine"><div class="miniCar" style="background-image:url('${img(v)}')"></div><div style="flex:1"><b>${v.year} ${v.make} ${v.model}</b><br><span class="muted">${v.stock} · ${money(v.price)} · cost ${money(totalCost(v))}</span></div><span class="status ${slugStatus(v.status)}">${v.status}</span></div>`).join('')},0)}}
+function render(){if(!isLogged()){document.getElementById('app').innerHTML=login();return}const path=(location.hash.slice(1)||'/inventory').split('?')[0];let html=path==='/dashboard'?dashboard():path==='/distribution'?distribution():path==='/leads'?leads():path==='/accounts'?accounts():path==='/settings'?settings():inventoryAdmin();document.getElementById('app').innerHTML=html;if(path==='/inventory'||path==='/'){setTimeout(renderAdminRows,0)}if(path==='/accounts'){setTimeout(loadAccounts,0)}if(path==='/dashboard'){setTimeout(()=>{const e=document.getElementById('recentRows');if(e)e.innerHTML=cars.slice(0,5).map(v=>`<div class="vehicleCell recentLine"><div class="miniCar" style="background-image:url('${img(v)}')"></div><div style="flex:1"><b>${v.year} ${v.make} ${v.model}</b><br><span class="muted">${v.stock} · ${money(v.price)} · cost ${money(totalCost(v))}</span></div><span class="status ${slugStatus(v.status)}">${v.status}</span></div>`).join('')},0)}}
 window.addEventListener('hashchange',render);render();

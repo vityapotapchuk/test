@@ -88,3 +88,29 @@ CREATE INDEX IF NOT EXISTS vehicles_status_idx ON vehicles(status);
 CREATE INDEX IF NOT EXISTS vehicles_make_model_idx ON vehicles(make, model);
 CREATE INDEX IF NOT EXISTS vehicle_publications_vehicle_idx ON vehicle_publications(vehicle_id);
 CREATE INDEX IF NOT EXISTS leads_status_created_idx ON leads(status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS distribution_connections (
+  channel text PRIMARY KEY CHECK (channel IN ('website','facebook','google','cargurus','cars','autotrader')),
+  enabled boolean NOT NULL DEFAULT false,
+  status text NOT NULL DEFAULT 'not_connected' CHECK (status IN ('not_connected','setup','ready','connected','error')),
+  mode text NOT NULL DEFAULT 'partner_feed',
+  account_label text,
+  config jsonb NOT NULL DEFAULT '{}'::jsonb,
+  last_tested_at timestamptz,
+  last_sync_at timestamptz,
+  last_error text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO distribution_connections(channel,enabled,status,mode,account_label)
+VALUES
+  ('website',true,'connected','internal','Philly Cars Website'),
+  ('facebook',false,'not_connected','manual','Facebook Marketplace'),
+  ('google',false,'setup','scheduled_feed','Google Merchant Center'),
+  ('cargurus',false,'setup','partner_feed','CarGurus'),
+  ('cars',false,'setup','partner_feed','Cars.com'),
+  ('autotrader',false,'setup','partner_feed','Autotrader')
+ON CONFLICT (channel) DO NOTHING;
+
+CREATE INDEX IF NOT EXISTS distribution_connections_status_idx ON distribution_connections(status);

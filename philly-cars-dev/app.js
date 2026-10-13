@@ -228,29 +228,44 @@ function validateLeadContact(form){
   return true;
 }
 window.submitLead=async(e,kind)=>{
-  e.preventDefault();if(!validateLeadContact(e.target))return;const data=Object.fromEntries(new FormData(e.target));
+  e.preventDefault();
+  const form=e.target;
+  if(form.dataset.submitting==='true'||!validateLeadContact(form))return;
+  const data=Object.fromEntries(new FormData(form));
+  const button=form.querySelector('button[type="submit"],button:not([type])');
+  form.dataset.submitting='true';
+  if(button)button.disabled=true;
   try{
     await apiFetch('/api/v1/leads',{method:'POST',body:JSON.stringify({
       type:kind,name:data.name,phone:data.phone||null,email:data.email||null,vin:data.vin||null,
       message:data.notes||null,payload:data
     })});
-    e.target.reset();toast('Request received. Philly Cars will follow up shortly.');
+    form.reset();toast('Request received. Philly Cars will follow up shortly.');
   }catch(err){toast('Could not send request. Please try again.')}
+  finally{form.dataset.submitting='false';if(button)button.disabled=false}
 }
 function about(){return `${header()}<main class="page"><div class="container"><section class="pageHero"><div class="eyebrow">About Philly Cars</div><h1>A Philadelphia dealership <span class="accent">built for drivers.</span></h1><p class="muted">A cleaner, more transparent way to browse and buy pre-owned vehicles.</p></section><section class="split"><div class="visual"></div><div><div class="eyebrow">Our story</div><h2>Browse vehicles with confidence.</h2><p class="muted">Philly Cars helps drivers explore available pre-owned vehicles in Philadelphia. Browse current inventory, review vehicle photos and specifications, and send an inquiry about a car that interests you.</p></div></section><section class="section"><div class="why"><div><div class="eyebrow">Our values</div><h2>People first. Always.</h2></div>${[['◎','Integrity'],['☆','Quality Vehicles'],['♡','Local & Trusted']].map(x=>`<div class="glass"><div class="iconBubble">${x[0]}</div><h3>${x[1]}</h3><p class="muted">Built into the experience from inventory to contact.</p></div>`).join('')}</div></section></div></main>${footer()}${mobileBottom()}`}
 function contact(){return `${header()}<main class="page"><div class="container"><section class="pageHero"><div class="eyebrow">Get in touch</div><h1>Contact <span class="accent">Philly Cars.</span></h1><p class="muted">Questions, test drives, trade-ins, or general inquiries? Send us a message and include the vehicle stock number if applicable.</p></section><section class="formCard glass"><div class="eyebrow">Send a message</div><h2>Ask our team</h2><form onsubmit="submitLead(event,'contact')"><div class="formGrid"><div class="field"><label>Name</label><input class="fieldInput" name="name" autocomplete="name" required></div><div class="field"><label>Phone</label><input class="fieldInput" name="phone" type="tel" autocomplete="tel"></div><div class="field full"><label>Email</label><input class="fieldInput" name="email" type="email" autocomplete="email"></div><div class="field full"><label>Message</label><textarea class="fieldInput" name="notes" required></textarea></div><button class="btn blue full">Send Message →</button></div></form></section></div></main>${footer()}${mobileBottom()}`}
 function savedPage(){const list=cars.filter(x=>saved.has(x.id));return `${header()}<main class="page"><div class="container"><section class="pageHero"><div class="eyebrow">Saved vehicles</div><h1>Your shortlist.</h1><p class="muted">Vehicles you saved on this device.</p></section><div class="vehicleGrid">${list.length?list.map(carCard).join(''):`<div class="empty glass"><h3>No saved vehicles yet</h3><p class="muted">Tap the heart on any vehicle to save it here.</p><a class="btn blue" href="#/inventory">Browse Inventory →</a></div>`}</div></div></main>${footer()}${mobileBottom()}`}
 window.openLeadModal=(kind,vehicle,stock)=>document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="leadModal"><form class="modalCard" style="max-width:560px" onsubmit="submitModalLead(event,'${kind}','${vehicle}','${stock}')"><div class="modalHead"><div><div class="eyebrow">${stock}</div><h2>${kind==='test-drive'?'Schedule Test Drive':'Vehicle Inquiry'}</h2></div><button class="smallBtn" type="button" onclick="leadModal.remove()">✕</button></div><p class="muted">${vehicle}</p><div class="formGrid"><div class="field full"><label>Name</label><input class="fieldInput" name="name" required></div><div class="field"><label>Phone</label><input class="fieldInput" name="phone" type="tel" autocomplete="tel"></div><div class="field"><label>Email</label><input class="fieldInput" name="email" type="email"></div><div class="field full"><label>Message</label><textarea class="fieldInput" name="notes"></textarea></div><button class="btn blue full">Send Request →</button></div></form></div>`)
 window.submitModalLead=async(e,kind,vehicle,stock)=>{
-  e.preventDefault();if(!validateLeadContact(e.target))return;const data=Object.fromEntries(new FormData(e.target));
+  e.preventDefault();
+  const form=e.target;
+  if(form.dataset.submitting==='true'||!validateLeadContact(form))return;
+  const data=Object.fromEntries(new FormData(form));
   const v=cars.find(x=>x.stock===stock);
+  const button=form.querySelector('button[type="submit"],button:not([type])');
+  form.dataset.submitting='true';
+  if(button)button.disabled=true;
   try{
     await apiFetch('/api/v1/leads',{method:'POST',body:JSON.stringify({
       type:kind,vehicleId:v?.dbId||null,name:data.name,phone:data.phone||null,email:data.email||null,
       message:data.notes||null,payload:{vehicle,stock,...data}
     })});
-    leadModal.remove();toast('Request received. Philly Cars will follow up shortly.');
+    document.getElementById('leadModal')?.remove();
+    toast('Request received. Philly Cars will follow up shortly.');
   }catch(err){toast('Could not send request. Please try again.')}
+  finally{form.dataset.submitting='false';if(button)button.disabled=false}
 }
 function notFound(){return `${header()}<main class="container page"><section class="pageHero"><h1>Page not found.</h1><a class="btn blue" href="#/">Back Home</a></section></main>${footer()}`}
 function render(){const {path,params}=parseRoute();let html;if(path==='/')html=home();else if(path==='/inventory')html=inventory(params);else if(path.startsWith('/car/'))html=detail(path.split('/').pop());else if(path==='/trade-in')html=genericForm('trade-in','Value Your Trade in Philadelphia.','Send your vehicle details for a quick review.','Get My Estimate');else if(path==='/sell')html=genericForm('sell','Sell your car to Philly Cars.','Request a straightforward offer with no obligation.','Request an Offer');else if(path==='/about')html=about();else if(path==='/contact')html=contact();else if(path==='/saved')html=savedPage();else html=notFound();document.getElementById('app').innerHTML=html;if(path==='/inventory')setTimeout(applyFilters,0);window.scrollTo(0,0)}

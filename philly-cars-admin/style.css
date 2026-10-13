@@ -115,3 +115,131 @@ body.mobileMenuOpen{overflow:hidden}
 .photoSourceDivider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em}
 .photoSourceDivider:before,.photoSourceDivider:after{content:"";height:1px;background:var(--line);flex:1}
 @media(max-width:700px){.driveImportRow{grid-template-columns:1fr}.driveImportRow .btn{width:100%}}
+
+
+/* Default dark theme — Philly Cars Dealer OS */
+:root{
+  color-scheme:dark;
+  --bg:#080b11;
+  --surface:rgba(20,25,34,.74);
+  --surface-2:rgba(27,33,44,.90);
+  --line:rgba(255,255,255,.09);
+  --ink:#f4f7fb;
+  --muted:#96a3b5;
+  --blue:#3d96ff;
+  --blue2:#6bb2ff;
+  --green:#45d497;
+  --amber:#f4bd52;
+  --red:#ff6b72;
+  --shadow:0 24px 75px rgba(0,0,0,.44);
+  --shadow-sm:0 12px 36px rgba(0,0,0,.32);
+}
+html{background:#080b11}
+body{
+  background:
+    radial-gradient(circle at 70% -12%,rgba(31,92,170,.20),transparent 30%),
+    linear-gradient(180deg,#090c12,#080b11);
+  color:var(--ink);
+}
+.eyebrow{color:#8190a5}
+.glass{
+  background:linear-gradient(150deg,rgba(30,37,49,.82),rgba(17,22,31,.67));
+  border-color:rgba(255,255,255,.09);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.055),0 20px 65px rgba(0,0,0,.34);
+}
+.adminShell{background:#090d13}
+.adminSide{
+  background:rgba(11,15,22,.88);
+  border-right-color:rgba(255,255,255,.07);
+}
+.adminMenu a{color:#99a6b8}
+.adminMenu a.active{background:rgba(61,150,255,.15);color:#7bbaff}
+.adminMain{background:transparent}
+.adminLogin{
+  background:
+    radial-gradient(circle at 20% 20%,rgba(36,86,150,.23),transparent 38%),
+    radial-gradient(circle at 80% 0%,rgba(20,66,128,.17),transparent 32%),
+    #090d13;
+}
+.adminBadge{
+  background:rgba(255,255,255,.055);
+  border-color:rgba(255,255,255,.09);
+  color:#cbd4e0;
+}
+.adminMobileBar,
+@supports (backdrop-filter:blur(1px)){
+}
+.adminMobileBar{
+  background:rgba(9,13,19,.90)!important;
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+.btn.soft,.smallBtn,.mobileMenuClose{
+  background:rgba(255,255,255,.055);
+  border-color:var(--line);
+  color:#e9eef6;
+}
+.btn.ghost{color:#e9eef6}
+.inventoryTop input,.inventoryTop select,
+.adminToolbar input,.adminToolbar select,.fieldInput,
+.photoDrop input[type=file]{
+  background:rgba(255,255,255,.055);
+  border-color:rgba(255,255,255,.09);
+  color:#f3f6fb;
+}
+input::placeholder,textarea::placeholder{color:#697689}
+select option{background:#121722;color:#f3f6fb}
+.field label{color:#9aa7b8}
+.tableWrap{background:rgba(15,20,29,.80)}
+.adminTable th{background:#111722;color:#8f9daf}
+.adminTable td{color:#dfe5ee}
+.smallBtn:disabled{color:#5d6878}
+.pipeline>div,
+.photoDrop,.photoCard,.photoEmpty,.carfaxDrop,.carfaxSummary>div,.photoSourceBlock{
+  background:rgba(255,255,255,.045);
+  border-color:rgba(255,255,255,.08);
+}
+.channelState.live,.syncPill.ready,.status.Available{
+  background:rgba(69,212,151,.13);color:#66e1aa;
+}
+.channelState.setup,.syncPill.off{
+  background:rgba(255,255,255,.06);color:#9da8b7;
+}
+.syncPill.manual,.status.Acquired,.status.Reconditioning,.status.PhotoNeeded{
+  background:rgba(244,189,82,.13);color:#f4c765;
+}
+.status.ReadytoPublish{background:rgba(61,150,255,.14);color:#79b9ff}
+.status.Deposit{background:rgba(149,104,255,.14);color:#b69bff}
+.fieldValue{
+  background:rgba(69,212,151,.10);
+  border-color:rgba(69,212,151,.16);
+  color:#69e0aa;
+}
+.notice{
+  background:rgba(255,255,255,.045);
+  color:#a8b4c4;
+}
+.recentLine{border-bottom-color:rgba(255,255,255,.06)}
+.modal{background:rgba(0,0,0,.68)}
+.modalCard{background:#0f141d;box-shadow:0 35px 110px rgba(0,0,0,.62)}
+.carfaxIcon{background:rgba(61,150,255,.12);color:#76b7ff}
+.mobileMenuButton{
+  background:rgba(255,255,255,.055);
+  border-color:rgba(255,255,255,.09);
+  box-shadow:0 8px 24px rgba(0,0,0,.22);
+}
+.mobileMenuButton span{background:#ecf1f8}
+.mobileMenuBackdrop{background:rgba(0,0,0,.52)}
+.mobileMenuDrawer{
+  background:rgba(11,15,22,.97);
+  border-left-color:rgba(255,255,255,.08);
+  box-shadow:-24px 0 64px rgba(0,0,0,.42);
+}
+.mobileMenuNav a{color:#a7b2c1}
+.mobileMenuNav a.active{background:rgba(61,150,255,.12);color:#7bbaff;box-shadow:none}
+.accountAvatar{background:rgba(61,150,255,.13);color:#7ab9ff}
+.accountRole.owner{background:rgba(151,105,255,.14);color:#b79dff}
+.accountRole.manager{background:rgba(255,255,255,.06);color:#aab5c3}
+.photoSourceDivider{color:#7f8b9d}
+@media (max-width:1180px), (max-width:1366px) and (pointer:coarse){
+  .adminMobileBar{background:rgba(9,13,19,.93)!important}
+}

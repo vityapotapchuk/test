@@ -16,6 +16,9 @@ CREATE TABLE IF NOT EXISTS vehicles (
   created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS photo_source_url text;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS photo_source_synced_at timestamptz;
+
 CREATE TABLE IF NOT EXISTS vehicle_images (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), vehicle_id uuid NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
   path text NOT NULL, alt_text text, sort_order int NOT NULL DEFAULT 0, is_cover boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now()
@@ -25,6 +28,13 @@ ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS content_type text;
 ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS original_name text;
 ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS size_bytes integer;
 ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS image_data bytea;
+ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS source_type text;
+ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS source_id text;
+ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS source_url text;
+
+CREATE UNIQUE INDEX IF NOT EXISTS vehicle_images_source_unique_idx
+  ON vehicle_images(vehicle_id, source_type, source_id)
+  WHERE source_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS vehicle_documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

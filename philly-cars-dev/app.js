@@ -29,7 +29,7 @@ function apiToUiVehicle(v){
     interior:v.interior_color||'',drive:v.drivetrain||'',trans:v.transmission||'',engine:v.engine||'',
     fuel:v.fuel_type||'',status:API_TO_UI_STATUS[v.status]||'Available',stock:v.stock_number||'',
     vin:v.vin||'',title:v.title_status||'',features:Array.isArray(v.features)?v.features:[],
-    description:v.description||''
+    description:v.description||'',images:Array.isArray(v.images)?v.images:[]
   };
 }
 async function apiFetch(path,options={}){
@@ -50,7 +50,7 @@ async function loadInventory(){
 }
 const money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(+n||0);
 const miles=n=>new Intl.NumberFormat('en-US').format(+n||0)+' mi';
-const img=v=>(v.customImage||REMOTE_IMAGES[(Number(String(v.id).replace(/\D/g,''))||0)%REMOTE_IMAGES.length]);
+const img=v=>(v.images?.[0]?.path||v.customImage||REMOTE_IMAGES[(Number(String(v.id).replace(/\D/g,''))||0)%REMOTE_IMAGES.length]);
 const slugStatus=s=>s==='Coming Soon'?'ComingSoon':s;
 function toast(msg){const el=document.createElement('div');el.className='toast';el.textContent=msg;document.getElementById('toast-root').appendChild(el);setTimeout(()=>el.remove(),2200)}
 function icon(n){return {'home':'⌂','car':'▰','heart':'♡','menu':'☰','trade':'↔','sell':'◇','about':'◌','contact':'✉','admin':'⌘'}[n]||'•'}

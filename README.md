@@ -52,3 +52,7 @@ Admin can upload a CARFAX PDF to create an inventory vehicle automatically. The 
 ## Google Drive vehicle photos
 
 For a saved vehicle, Admin can store a public Google Drive folder URL and import its images. The folder must be shared as **Anyone with the link**. The API lists the public folder using `GOOGLE_DRIVE_API_KEY`, downloads image files, converts them to WebP (max 1920px, quality 82), appends them to the vehicle gallery, and records the Drive file IDs so re-imports skip duplicates. Nested public folders are supported up to the server safety limits.
+
+## Automatic vehicle descriptions
+
+New vehicles receive a factual English listing description automatically. CARFAX imports use the parsed CARFAX history plus official NHTSA vPIC VIN data and NHTSA recall search data. Manually created vehicles generate from the vehicle record and available NHTSA data. Admin can edit the text or use **Regenerate Description** after vehicle details change. Generated-source metadata and generation time are stored with the vehicle. The generator only includes fields returned by the underlying sources and does not invent equipment.

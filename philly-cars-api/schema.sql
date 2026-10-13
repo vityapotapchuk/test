@@ -26,6 +26,23 @@ ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS original_name text;
 ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS size_bytes integer;
 ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS image_data bytea;
 
+CREATE TABLE IF NOT EXISTS vehicle_documents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  vehicle_id uuid NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
+  kind text NOT NULL CHECK (kind IN ('carfax')),
+  original_name text NOT NULL,
+  content_type text,
+  size_bytes integer,
+  sha256 text,
+  document_data bytea,
+  parsed_text text,
+  parsed_data jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS vehicle_documents_vehicle_idx ON vehicle_documents(vehicle_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS vehicle_documents_sha_idx ON vehicle_documents(sha256);
+
 CREATE TABLE IF NOT EXISTS vehicle_publications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   vehicle_id uuid NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,

@@ -168,7 +168,7 @@ function detail(id){
       <section class="vehicleSliderFullBleed">
         <div class="vehicleSlider" id="vehicleSlider" ontouchstart="galleryTouchStart(event)" ontouchend="galleryTouchEnd(event)">
           <div class="vehicleSliderStage">
-            <img id="galleryMainImage" class="vehicleSliderImage" src="${galleryUrls[coverIndex]}" alt="${v.year} ${v.make} ${v.model}">
+            <img id="galleryMainImage" class="vehicleSliderImage" src="${galleryUrls[coverIndex]}" alt="${v.year} ${v.make} ${v.model}, photo ${coverIndex+1} of ${galleryUrls.length}" fetchpriority="high" decoding="async">
             ${galleryUrls.length>1?`
               <button class="vehicleSliderArrow prev" aria-label="Previous photo" onclick="galleryPrev()">‹</button>
               <button class="vehicleSliderArrow next" aria-label="Next photo" onclick="galleryNext()">›</button>
@@ -177,7 +177,7 @@ function detail(id){
           </div>
           ${galleryUrls.length>1?`
             <div class="vehicleSliderThumbs" id="galleryThumbs">
-              ${galleryUrls.map((url,i)=>`<button class="vehicleSliderThumb ${i===coverIndex?'active':''}" aria-label="View photo ${i+1}" onclick="setGalleryIndex(${i})"><img src="${url}" alt=""></button>`).join('')}
+              ${galleryUrls.map((url,i)=>`<button class="vehicleSliderThumb ${i===coverIndex?'active':''}" aria-label="View photo ${i+1}" onclick="setGalleryIndex(${i})"><img src="${url}" alt="${v.year} ${v.make} ${v.model}, thumbnail ${i+1}" loading="lazy" decoding="async"></button>`).join('')}
             </div>
           `:''}
         </div>
@@ -222,6 +222,8 @@ window.setGalleryIndex=index=>{
   if(image){
     image.classList.add('changing');
     image.src=state.images[state.index];
+    const vehicle= cars.find(v=>v.id===parseRoute().path.split('/').pop());
+    if(vehicle)image.alt=`${vehicle.year} ${vehicle.make} ${vehicle.model}, photo ${state.index+1} of ${count}`;
     requestAnimationFrame(()=>requestAnimationFrame(()=>image.classList.remove('changing')));
   }
   if(counter)counter.textContent=`${state.index+1} / ${count}`;

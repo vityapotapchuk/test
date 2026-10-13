@@ -219,20 +219,13 @@ window.quickInquiry=(id,type='inquiry')=>{const v=cars.find(x=>x.id===id);openLe
 function genericForm(kind,title,sub,button){return `${header()}<main class="page"><div class="container"><section class="pageHero"><div class="eyebrow">Philly Cars · Philadelphia</div><h1>${title}</h1><p class="muted">${sub}</p></section><section class="formCard glass"><form onsubmit="submitLead(event,'${kind}')"><div class="formGrid"><div class="field"><label>Full Name</label><input class="fieldInput" name="name" required placeholder="Your name"></div><div class="field"><label>Phone</label><input class="fieldInput" name="phone" type="tel" autocomplete="tel" placeholder="(215) 555-0123"></div><div class="field"><label>Email</label><input class="fieldInput" name="email" type="email" placeholder="you@email.com"></div><div class="field"><label>VIN</label><input class="fieldInput" name="vin" placeholder="17-character VIN"></div><div class="field"><label>Year</label><input class="fieldInput" name="year" inputmode="numeric" placeholder="2022"></div><div class="field"><label>Make / Model</label><input class="fieldInput" name="vehicle" placeholder="BMW 330i"></div><div class="field"><label>Mileage</label><input class="fieldInput" name="mileage" inputmode="numeric" placeholder="32,000"></div><div class="field"><label>Condition</label><select class="fieldInput" name="condition"><option>Excellent</option><option>Good</option><option>Fair</option></select></div><div class="field full"><label>Notes</label><textarea class="fieldInput" name="notes" placeholder="Tell us anything useful about the vehicle."></textarea></div><button class="btn blue full">${button} →</button></div></form></section></div></main>${footer()}${mobileBottom()}`}
 function validateLeadContact(form){
   const data=Object.fromEntries(new FormData(form));
-  const name=String(data.name||'').trim();
-  const phone=String(data.phone||'').trim();
-  const email=String(data.email||'').trim();
-  if(name.length<2){toast('Please enter your full name.');form.querySelector('[name="name"]')?.focus();return false}
-  if(!phone&&!email){toast('Enter a phone number or email.');form.querySelector('[name="phone"]')?.focus();return false}
-  if(phone&&(!/^[+()\\d\\s.-]+$/.test(phone)||phone.replace(/\\D/g,'').length<10||phone.replace(/\\D/g,'').length>15)){
-    toast('Please enter a valid phone number.');form.querySelector('[name="phone"]')?.focus();return false
-  }
-  if(email&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)){
-    toast('Please enter a valid email.');form.querySelector('[name="email"]')?.focus();return false
-  }
-  if(data.vin&& !/^[A-HJ-NPR-Z0-9]{17}$/i.test(String(data.vin).trim())){
-    toast('VIN must contain 17 valid characters.');form.querySelector('[name="vin"]')?.focus();return false
-  }
+  const name=String(data.name||'').trim(),phone=String(data.phone||'').trim(),email=String(data.email||'').trim();
+  const fail=(message,field)=>{toast(message);form.querySelector('[name="'+field+'"]')?.focus();return false};
+  if(name.length<2||name.length>120)return fail('Please enter your full name.','name');
+  if(!phone&&!email)return fail('Enter a phone number or email.','phone');
+  if(phone&&(!/^[+()\d\s.-]+$/.test(phone)||phone.replace(/\D/g,'').length<10||phone.replace(/\D/g,'').length>15))return fail('Please enter a valid phone number.','phone');
+  if(email&&(email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))return fail('Please enter a valid email.','email');
+  if(data.vin&&!/^[A-HJ-NPR-Z0-9]{17}$/i.test(String(data.vin).trim()))return fail('VIN must contain 17 valid characters.','vin');
   return true;
 }
 window.submitLead=async(e,kind)=>{
@@ -250,7 +243,7 @@ function contact(){return `${header()}<main class="page"><div class="container">
 function savedPage(){const list=cars.filter(x=>saved.has(x.id));return `${header()}<main class="page"><div class="container"><section class="pageHero"><div class="eyebrow">Saved vehicles</div><h1>Your shortlist.</h1><p class="muted">Vehicles you saved on this device.</p></section><div class="vehicleGrid">${list.length?list.map(carCard).join(''):`<div class="empty glass"><h3>No saved vehicles yet</h3><p class="muted">Tap the heart on any vehicle to save it here.</p><a class="btn blue" href="#/inventory">Browse Inventory →</a></div>`}</div></div></main>${footer()}${mobileBottom()}`}
 window.openLeadModal=(kind,vehicle,stock)=>document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="leadModal"><form class="modalCard" style="max-width:560px" onsubmit="submitModalLead(event,'${kind}','${vehicle}','${stock}')"><div class="modalHead"><div><div class="eyebrow">${stock}</div><h2>${kind==='test-drive'?'Schedule Test Drive':'Vehicle Inquiry'}</h2></div><button class="smallBtn" type="button" onclick="leadModal.remove()">✕</button></div><p class="muted">${vehicle}</p><div class="formGrid"><div class="field full"><label>Name</label><input class="fieldInput" name="name" required></div><div class="field"><label>Phone</label><input class="fieldInput" name="phone" type="tel" autocomplete="tel"></div><div class="field"><label>Email</label><input class="fieldInput" name="email" type="email"></div><div class="field full"><label>Message</label><textarea class="fieldInput" name="notes"></textarea></div><button class="btn blue full">Send Request →</button></div></form></div>`)
 window.submitModalLead=async(e,kind,vehicle,stock)=>{
-  e.preventDefault();const data=Object.fromEntries(new FormData(e.target));
+  e.preventDefault();if(!validateLeadContact(e.target))return;const data=Object.fromEntries(new FormData(e.target));
   const v=cars.find(x=>x.stock===stock);
   try{
     await apiFetch('/api/v1/leads',{method:'POST',body:JSON.stringify({

@@ -20,6 +20,7 @@ ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS photo_source_url text;
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS photo_source_synced_at timestamptz;
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS description_generated_at timestamptz;
 ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS description_sources jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE vehicles ADD COLUMN IF NOT EXISTS mpg_combined integer;
 
 CREATE TABLE IF NOT EXISTS vehicle_images (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), vehicle_id uuid NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,

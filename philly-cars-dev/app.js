@@ -177,8 +177,7 @@ function detail(id){
         <aside class="stickyCard glass">
           <span class="pill ${v.status==='Pending'?'pending':v.status==='Coming Soon'?'coming':''}">${v.status}</span>
           <div class="price" style="margin-top:12px">${money(v.price)}</div>
-          <button class="btn blue" onclick="toast('Dealership phone will be connected before launch')">☎ Call Dealer</button>
-          <button class="btn soft" onclick="toast('Dealership SMS will be connected before launch')">Message Us</button>
+          <button class="btn blue" onclick="quickInquiry('${v.id}')">Ask About This Car</button>
           <button class="btn soft" onclick="quickInquiry('${v.id}','test-drive')">Schedule Test Drive</button>
           <button class="btn ghost" onclick="toggleSaved('${v.id}',this)">${saved.has(v.id)?'♥ Saved':'♡ Save Vehicle'}</button>
         </aside>

@@ -153,6 +153,101 @@ async function decodeVinForImport(vin) {
   };
 }
 
+function parseGoogleDriveFolderLink(value='') {
+  const raw=String(value||'').trim();
+  if(!raw)return null;
+  try{
+    const url=new URL(raw);
+    if(!/(^|\.)drive\.google\.com$/i.test(url.hostname))return null;
+    const match=url.pathname.match(/\/folders\/([A-Za-z0-9_-]{10,})/);
+    if(!match)return null;
+    return {
+      folderId:match[1],
+      resourceKey:url.searchParams.get('resourcekey')||url.searchParams.get('resourceKey')||''
+    };
+  }catch{
+    return null;
+  }
+}
+
+async function listPublicGoogleDriveImages(folderUrl) {
+  const apiKey=String(process.env.GOOGLE_DRIVE_API_KEY||'').trim();
+  if(!apiKey)throw new Error('google_drive_not_configured');
+  const parsed=parseGoogleDriveFolderLink(folderUrl);
+  if(!parsed)throw new Error('invalid_google_drive_folder_url');
+
+  const queue=[parsed];
+  const visited=new Set();
+  const images=[];
+  let foldersScanned=0;
+
+  while(queue.length && foldersScanned<20 && images.length<100){
+    const folder=queue.shift();
+    if(!folder?.folderId||visited.has(folder.folderId))continue;
+    visited.add(folder.folderId);
+    foldersScanned++;
+
+    let pageToken='';
+    do{
+      const params=new URLSearchParams({
+        q:`'${folder.folderId}' in parents and trashed = false`,
+        fields:'nextPageToken,files(id,name,mimeType,size,webContentLink,resourceKey,capabilities(canDownload))',
+        pageSize:'1000',
+        supportsAllDrives:'true',
+        includeItemsFromAllDrives:'true',
+        key:apiKey
+      });
+      if(pageToken)params.set('pageToken',pageToken);
+      const headers={Accept:'application/json'};
+      if(folder.resourceKey)headers['X-Goog-Drive-Resource-Keys']=folder.folderId+'/'+folder.resourceKey;
+
+      const response=await fetch('https://www.googleapis.com/drive/v3/files?'+params.toString(),{
+        headers,
+        signal:AbortSignal.timeout(15000)
+      });
+      if(!response.ok){
+        if(response.status===403||response.status===404)throw new Error('google_drive_folder_not_public');
+        throw new Error('google_drive_list_failed');
+      }
+      const data=await response.json();
+      for(const file of data.files||[]){
+        if(file.mimeType==='application/vnd.google-apps.folder'){
+          queue.push({folderId:file.id,resourceKey:file.resourceKey||''});
+          continue;
+        }
+        if(/^image\//i.test(file.mimeType||'') && file.capabilities?.canDownload!==false){
+          images.push(file);
+          if(images.length>=100)break;
+        }
+      }
+      pageToken=data.nextPageToken||'';
+    }while(pageToken && images.length<100);
+  }
+
+  return images.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),undefined,{numeric:true,sensitivity:'base'}));
+}
+
+async function downloadPublicGoogleDriveImage(file) {
+  const maxBytes=30*1024*1024;
+  const declared=Number(file.size||0);
+  if(declared>maxBytes)throw new Error('drive_image_too_large');
+  if(!file.webContentLink)throw new Error('drive_download_link_missing');
+
+  const response=await fetch(file.webContentLink,{
+    redirect:'follow',
+    signal:AbortSignal.timeout(30000),
+    headers:{'User-Agent':'PhillyCars/1.0'}
+  });
+  if(!response.ok)throw new Error('drive_image_download_failed');
+
+  const contentLength=Number(response.headers.get('content-length')||0);
+  if(contentLength>maxBytes)throw new Error('drive_image_too_large');
+  const data=Buffer.from(await response.arrayBuffer());
+  if(!data.length)throw new Error('drive_image_empty');
+  if(data.length>maxBytes)throw new Error('drive_image_too_large');
+  return data;
+}
+
 async function nextStockNumber(client) {
   const result=await client.query(`
     SELECT COALESCE(MAX(NULLIF(regexp_replace(stock_number,'\\D','','g'),'')::int),1059) AS max_stock
@@ -686,7 +781,7 @@ app.patch('/api/v1/admin/vehicles/:id', { preHandler: requireAdmin }, async (req
   const allowed = {
     stockNumber:'stock_number', vin:'vin', year:'year', make:'make', model:'model', trim:'trim', price:'price', mileage:'mileage', purchasePrice:'purchase_price', auctionFees:'auction_fees', transportCost:'transport_cost', reconCost:'recon_cost', otherCost:'other_cost', acquiredAt:'acquired_at',
     bodyStyle:'body_style', exteriorColor:'exterior_color', interiorColor:'interior_color', drivetrain:'drivetrain', transmission:'transmission',
-    engine:'engine', fuelType:'fuel_type', titleStatus:'title_status', status:'status', description:'description', features:'features'
+    engine:'engine', fuelType:'fuel_type', titleStatus:'title_status', status:'status', description:'description', features:'features', photoSourceUrl:'photo_source_url'
   };
   const sets=[]; const values=[];
   for (const [key,col] of Object.entries(allowed)) if (Object.hasOwn(req.body||{}, key)) {
@@ -704,6 +799,105 @@ app.post('/api/v1/admin/vehicles/:id/archive', { preHandler: requireAdmin }, asy
   const result = await pool.query(`UPDATE vehicles SET status='archived',updated_at=now() WHERE id=$1 RETURNING id,status`, [req.params.id]);
   if (!result.rowCount) return reply.code(404).send({ error:'not_found' });
   return result.rows[0];
+});
+
+app.post('/api/v1/admin/vehicles/:id/images/import-drive', { preHandler: requireAdmin }, async (req, reply) => {
+  const folderUrl=String(req.body?.folderUrl||'').trim();
+  if(!folderUrl)return reply.code(400).send({error:'google_drive_folder_url_required'});
+
+  const vehicle=await pool.query(
+    'SELECT id,year,make,model FROM vehicles WHERE id=$1',
+    [req.params.id]
+  );
+  if(!vehicle.rowCount)return reply.code(404).send({error:'vehicle_not_found'});
+
+  let files;
+  try{
+    files=await listPublicGoogleDriveImages(folderUrl);
+  }catch(err){
+    const code=String(err?.message||'google_drive_list_failed');
+    const status=code==='google_drive_not_configured'?503:
+      code==='invalid_google_drive_folder_url'?400:
+      code==='google_drive_folder_not_public'?403:502;
+    return reply.code(status).send({error:code});
+  }
+  if(!files.length)return reply.code(422).send({error:'google_drive_no_images'});
+
+  const existing=await pool.query(
+    "SELECT source_id FROM vehicle_images WHERE vehicle_id=$1 AND source_type='google_drive' AND source_id IS NOT NULL",
+    [req.params.id]
+  );
+  const importedIds=new Set(existing.rows.map(r=>r.source_id));
+  const stats=await pool.query(
+    'SELECT count(*)::int AS count, coalesce(max(sort_order),-1)::int AS max_sort FROM vehicle_images WHERE vehicle_id=$1',
+    [req.params.id]
+  );
+
+  let nextSort=stats.rows[0].max_sort+1;
+  let coverAvailable=stats.rows[0].count>0;
+  const imported=[];
+  const skipped=[];
+  const failed=[];
+  const alt=`${vehicle.rows[0].year} ${vehicle.rows[0].make} ${vehicle.rows[0].model}`;
+
+  for(const file of files){
+    if(importedIds.has(file.id)){
+      skipped.push({id:file.id,name:file.name,reason:'already_imported'});
+      continue;
+    }
+    try{
+      const raw=await downloadPublicGoogleDriveImage(file);
+      const optimized=await sharp(raw,{failOn:'none'})
+        .rotate()
+        .resize({width:1920,height:1920,fit:'inside',withoutEnlargement:true})
+        .webp({quality:82,effort:4,smartSubsample:true})
+        .toBuffer();
+
+      const imageId=crypto.randomUUID();
+      const path='/api/v1/vehicle-images/'+imageId;
+      const isCover=!coverAvailable;
+      const inserted=await pool.query(`
+        INSERT INTO vehicle_images(
+          id,vehicle_id,path,alt_text,sort_order,is_cover,content_type,original_name,size_bytes,image_data,
+          source_type,source_id,source_url
+        )
+        VALUES($1,$2,$3,$4,$5,$6,'image/webp',$7,$8,$9,'google_drive',$10,$11)
+        ON CONFLICT DO NOTHING
+        RETURNING id,path,alt_text,sort_order,is_cover,content_type,original_name,size_bytes,created_at
+      `,[
+        imageId,req.params.id,path,alt,nextSort,isCover,file.name||null,optimized.length,optimized,
+        file.id,file.webContentLink||null
+      ]);
+
+      if(!inserted.rowCount){
+        skipped.push({id:file.id,name:file.name,reason:'already_imported'});
+        continue;
+      }
+      imported.push(inserted.rows[0]);
+      importedIds.add(file.id);
+      nextSort++;
+      coverAvailable=true;
+    }catch(err){
+      req.log.warn({err,fileId:file.id,fileName:file.name},'Google Drive vehicle image import failed');
+      failed.push({id:file.id,name:file.name,reason:String(err?.message||'import_failed')});
+    }
+  }
+
+  await pool.query(
+    'UPDATE vehicles SET photo_source_url=$1, photo_source_synced_at=now(), updated_at=now() WHERE id=$2',
+    [folderUrl,req.params.id]
+  );
+
+  return {
+    ok:true,
+    found:files.length,
+    importedCount:imported.length,
+    skippedCount:skipped.length,
+    failedCount:failed.length,
+    imported,
+    skipped,
+    failed
+  };
 });
 
 app.post('/api/v1/admin/vehicles/:id/images', { preHandler: requireAdmin }, async (req, reply) => {

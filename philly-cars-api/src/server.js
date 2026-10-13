@@ -1755,6 +1755,34 @@ app.delete('/api/v1/admin/vehicles/:vehicleId/images/:imageId', { preHandler: re
   }
 });
 
+app.get('/api/v1/admin/distribution/facebook-draft/:vehicleId', { preHandler: requireAdmin }, async (req, reply) => {
+  const result=await pool.query(`SELECT v.*,
+    COALESCE((SELECT jsonb_agg(jsonb_build_object('url',vi.path,'alt',vi.alt_text)
+      ORDER BY vi.is_cover DESC,vi.sort_order ASC,vi.created_at ASC)
+      FROM vehicle_images vi WHERE vi.vehicle_id=v.id),'[]'::jsonb) AS photos
+    FROM vehicles v WHERE v.id=$1`,[req.params.vehicleId]);
+  if(!result.rowCount)return reply.code(404).send({error:'vehicle_not_found'});
+  const v=result.rows[0];
+  const year=Number(v.year)||'';
+  const title=[year,v.make,v.model,v.trim].filter(Boolean).join(' ').trim();
+  const specs=[
+    v.mileage!=null?`Mileage: ${Number(v.mileage).toLocaleString('en-US')} miles`:null,
+    v.transmission?`Transmission: ${v.transmission}`:null,
+    v.drivetrain?`Drivetrain: ${v.drivetrain}`:null,
+    v.fuel_type?`Fuel: ${v.fuel_type}`:null,
+    v.exterior_color?`Exterior: ${v.exterior_color}`:null,
+    v.title_status?`Title: ${v.title_status}`:null,
+    v.vin?`VIN: ${v.vin}`:null,
+    v.stock_number?`Stock #: ${v.stock_number}`:null
+  ].filter(Boolean);
+  const description=[title,`Price: ${Number(v.price||0).toLocaleString('en-US')}`,...specs,
+    String(v.description||'').trim(),`View vehicle: ${vehicleVdpUrl(v)}`].filter(Boolean).join('\n');
+  return {channel:'facebook_marketplace',mode:'manual_review',published:false,
+    vehicleId:v.id,title,price:Number(v.price)||0,description,
+    photos:(v.photos||[]).map(p=>({url:absoluteVehicleImageUrl(req,p.url),alt:p.alt||title})),
+    vehicleUrl:vehicleVdpUrl(v),instructions:'Copy the description and upload the photos to Facebook Marketplace manually. This endpoint does not publish or log in to Facebook.'};
+});
+
 app.get('/api/v1/admin/distribution/connections', { preHandler: requireAdmin }, async req => {
   const result=await pool.query('SELECT * FROM distribution_connections ORDER BY channel');
   const apiOrigin=absoluteApiOrigin(req);

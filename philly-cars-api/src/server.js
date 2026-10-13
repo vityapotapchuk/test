@@ -931,12 +931,25 @@ app.get('/api/v1/vehicle-images/:id', async (req, reply) => {
 });
 
 app.post('/api/v1/leads', async (req, reply) => {
-  const b = req.body || {};
-  if (!b.type || !b.name) return reply.code(400).send({ error: 'type_and_name_required' });
-  const result = await pool.query(`
+  const b=req.body||{};
+  const str=(v,max)=>typeof v==='string'?v.trim().slice(0,max+1):'';
+  const type=str(b.type,40),name=str(b.name,120),phone=str(b.phone,40);
+  const email=str(b.email,254).toLowerCase(),message=str(b.message,4000);
+  const vin=str(b.vin,17).toUpperCase();
+  const allowedTypes=new Set(['inquiry','test-drive','trade-in','sell','contact','availability']);
+  if(!allowedTypes.has(type))return reply.code(400).send({error:'invalid_lead_type'});
+  if(name.length<2||name.length>120)return reply.code(400).send({error:'invalid_name'});
+  if(!phone&&!email)return reply.code(400).send({error:'phone_or_email_required'});
+  if(phone&&(!/^[+()\d\s.-]+$/.test(phone)||phone.replace(/\D/g,'').length<10||phone.replace(/\D/g,'').length>15))return reply.code(400).send({error:'invalid_phone'});
+  if(email&&(email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))return reply.code(400).send({error:'invalid_email'});
+  if(message.length>4000)return reply.code(400).send({error:'message_too_long'});
+  if(vin&&!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin))return reply.code(400).send({error:'invalid_vin'});
+  if(b.vehicleId&& !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(b.vehicleId)))return reply.code(400).send({error:'invalid_vehicle_id'});
+  const payload={...b,type,name,phone:phone||null,email:email||null,vin:vin||null,message:message||null};
+  const result=await pool.query(`
     INSERT INTO leads(type,vehicle_id,name,phone,email,vin,message,payload)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,created_at
-  `, [b.type, b.vehicleId || null, b.name, b.phone || null, b.email || null, b.vin || null, b.message || null, b]);
+  `,[type,b.vehicleId||null,name,phone||null,email||null,vin||null,message||null,payload]);
   return reply.code(201).send(result.rows[0]);
 });
 

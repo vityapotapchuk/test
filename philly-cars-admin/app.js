@@ -21,9 +21,15 @@ const saveCars=()=>localStorage.setItem('phillyAdminCarsV4',JSON.stringify(cars)
 const API_TO_UI_STATUS={acquired:'Acquired',reconditioning:'Reconditioning',photo_needed:'Photo Needed',ready_to_publish:'Ready to Publish',available:'Available',deposit:'Deposit',sold:'Sold',archived:'Archived'};
 const UI_TO_API_STATUS=Object.fromEntries(Object.entries(API_TO_UI_STATUS).map(([k,v])=>[v,k]));
 const isApiSession=()=>sessionStorage.getItem('phillyAdminApiSession')==='1';
+const getAdminToken=()=>sessionStorage.getItem('phillyAdminToken')||'';
 async function apiFetch(path,options={}){
   const isForm=options.body instanceof FormData;
-  const headers={...(isForm?{}:{'Content-Type':'application/json'}),...(options.headers||{})};
+  const token=getAdminToken();
+  const headers={
+    ...(isForm?{}:{'Content-Type':'application/json'}),
+    ...(token?{Authorization:'Bearer '+token}:{}),
+    ...(options.headers||{})
+  };
   const res=await fetch(API_BASE+path,{credentials:'include',...options,headers});
   let body={}; try{body=await res.json()}catch{}
   if(!res.ok){const err=new Error(body.error||('HTTP '+res.status));err.status=res.status;err.body=body;throw err}
@@ -47,7 +53,7 @@ function uiToApiVehicle(v){return {
 async function loadCarsFromApi(){
   if(!isApiSession()) return false;
   try{const data=await apiFetch('/api/v1/admin/vehicles');cars=(data.vehicles||[]).map(apiToUiVehicle);saveCars();return true}
-  catch(e){if(e.status===401){sessionStorage.removeItem('phillyAdminApiSession');sessionStorage.removeItem('phillyAdminSession')}return false}
+  catch(e){if(e.status===401){sessionStorage.removeItem('phillyAdminToken');sessionStorage.removeItem('phillyAdminApiSession');sessionStorage.removeItem('phillyAdminSession')}return false}
 }
 const DEMO_LEADS=[
  {kind:'Test Drive',name:'Marcus Hill',phone:'(215) 555-0198',vehicle:'2023 BMW 330i xDrive',date:'2026-09-24T13:20:00Z'},
@@ -114,31 +120,36 @@ window.adminLogin=async e=>{
   e.preventDefault();
   const fd=new FormData(e.target); const email=fd.get('email'); const password=fd.get('password');
   try{
+    let loginData;
     try{
-      await apiFetch('/api/v1/admin/session',{method:'POST',body:JSON.stringify({email,password})});
+      loginData=await apiFetch('/api/v1/admin/session',{method:'POST',body:JSON.stringify({email,password})});
     }catch(loginErr){
       if(loginErr.status===401){
         try{
           await apiFetch('/api/v1/admin/bootstrap',{method:'POST',body:JSON.stringify({email,password})});
-          await apiFetch('/api/v1/admin/session',{method:'POST',body:JSON.stringify({email,password})});
+          loginData=await apiFetch('/api/v1/admin/session',{method:'POST',body:JSON.stringify({email,password})});
         }catch(bootstrapErr){
           if(bootstrapErr.status===409) throw loginErr;
           throw bootstrapErr;
         }
       }else throw loginErr;
     }
+    if(loginData?.sessionToken)sessionStorage.setItem('phillyAdminToken',loginData.sessionToken);
     sessionStorage.setItem('phillyAdminSession','1');sessionStorage.setItem('phillyAdminApiSession','1');
-    await loadCarsFromApi(); location.hash='/inventory'; render(); toast('Connected to Philly Cars database');
+    const loaded=await loadCarsFromApi();
+    if(!loaded)throw Object.assign(new Error('session_not_available'),{status:401});
+    location.hash='/inventory'; render(); toast('Connected to Philly Cars database');
   }catch(err){
+    sessionStorage.removeItem('phillyAdminToken');
     if(err.status===503){
       sessionStorage.setItem('phillyAdminSession','1');sessionStorage.removeItem('phillyAdminApiSession');
       location.hash='/inventory';render();toast('Database link pending — local dev mode');
-    }else toast(err.status===401?'Invalid email or password':'API connection failed');
+    }else toast(err.status===401?'Session blocked by browser or invalid login':'API connection failed');
   }
 }
 window.logout=async()=>{
   if(isApiSession()){try{await apiFetch('/api/v1/admin/session',{method:'DELETE'})}catch{}}
-  sessionStorage.removeItem('phillyAdminApiSession');sessionStorage.removeItem('phillyAdminSession');location.hash='/';render()
+  sessionStorage.removeItem('phillyAdminToken');sessionStorage.removeItem('phillyAdminApiSession');sessionStorage.removeItem('phillyAdminSession');location.hash='/';render()
 }
 function sidebar(active='inventory'){return `<aside class="adminSide"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="eyebrow" style="margin:24px 0 8px">Dealer OS</div><nav class="adminMenu"><a class="${active==='dashboard'?'active':''}" href="#/dashboard"><span>⌂</span> Dashboard</a><a class="${active==='inventory'?'active':''}" href="#/inventory"><span>▰</span> Inventory</a><a class="${active==='distribution'?'active':''}" href="#/distribution"><span>⇄</span> Distribution</a><a class="${active==='leads'?'active':''}" href="#/leads"><span>◎</span> Leads</a><a class="${active==='settings'?'active':''}" href="#/settings"><span>⚙</span> Settings</a></nav><div style="margin-top:auto"><div class="adminBadge" style="margin-bottom:10px;text-align:center">${isApiSession()?'API + DB':'Local dev'}</div><button class="btn soft" style="width:100%" onclick="logout()">Sign Out</button></div></aside>`}
 function mobileBar(){return `<div class="adminMobileBar"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="actions"><button class="smallBtn" onclick="location.hash='/inventory'">Inventory</button><button class="smallBtn" onclick="location.hash='/distribution'">Distribution</button></div></div>`}

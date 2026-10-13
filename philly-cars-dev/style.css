@@ -9,3 +9,111 @@
 @media (max-width:640px){.container{width:min(100% - 24px,1180px)}.nav{padding:6px 0}.navin{gap:8px;min-height:54px}.brand{font-size:18px}.navActions .blue{display:none}.hero{padding-top:12px}.heroWrap{min-height:610px;border-radius:28px}.heroPhoto{background:linear-gradient(180deg,rgba(248,252,255,.98) 0%,rgba(248,252,255,.91) 53%,rgba(248,252,255,.2) 74%,rgba(248,252,255,.08) 100%),url('https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1800&q=85') 67% bottom/cover no-repeat}.heroContent{width:100%;justify-content:flex-start;padding:38px 25px}.heroContent h1{font-size:52px;max-width:480px}.hero p{font-size:16px}.searchPanel{margin:-95px 10px 0;grid-template-columns:1fr 1fr;padding:12px;border-radius:21px}.section{padding-top:58px}.sectionHead{align-items:start}.sectionHead h2{font-size:38px}.sectionHead .link{font-size:12px}.cards{grid-template-columns:1fr}.bodyStyles{grid-template-columns:1fr 1fr 1fr}.why{grid-template-columns:1fr}.cityBanner{padding:30px;min-height:360px;background-position:64% center}.cityBanner h2{font-size:38px;max-width:75%}.footerGrid{grid-template-columns:1fr 1fr}.pageHero{padding-top:40px}.inventoryTop{grid-template-columns:1fr 1fr}.inventoryTop input{grid-column:1/-1}.inventoryTop .btn{grid-column:1/-1}.vehicleGrid{grid-template-columns:1fr}.detailHero{padding-top:35px}.galleryMain{aspect-ratio:1.25}.specStrip{grid-template-columns:1fr 1fr}.detailSections{grid-template-columns:1fr}.featureList{grid-template-columns:1fr}.formGrid{grid-template-columns:1fr}.split{grid-template-columns:1fr}.contactCards{grid-template-columns:1fr 1fr}.adminShell{display:block}.adminSide{display:none}.adminMain{padding:18px 12px 90px}.adminHead h1{font-size:34px}.stats{grid-template-columns:1fr 1fr}.adminToolbar{flex-wrap:wrap}.adminToolbar input{flex-basis:100%}.mobileBottom{display:grid;grid-template-columns:repeat(4,1fr);position:fixed;left:10px;right:10px;bottom:max(10px,env(safe-area-inset-bottom));z-index:100;padding:7px;border-radius:22px}.mobileBottom a{text-decoration:none;text-align:center;padding:9px 2px;font-size:11px;color:#5d6b7e}.mobileBottom b{display:block;font-size:18px;margin-bottom:2px}.modalCard{padding:18px}.modalCard .formGrid{grid-template-columns:1fr}}
 
 .stockLine{font-size:11px;color:#8490a1;margin-top:-7px;margin-bottom:13px}
+
+/* Default dark theme — Philly Cars */
+:root{
+  color-scheme:dark;
+  --bg:#080b11;
+  --surface:rgba(20,25,34,.72);
+  --surface-2:rgba(26,32,43,.88);
+  --line:rgba(255,255,255,.09);
+  --ink:#f4f7fb;
+  --muted:#9aa6b8;
+  --blue:#3d96ff;
+  --blue2:#6bb2ff;
+  --green:#45d497;
+  --amber:#f4bd52;
+  --red:#ff6b72;
+  --shadow:0 24px 75px rgba(0,0,0,.42);
+  --shadow-sm:0 12px 36px rgba(0,0,0,.30);
+}
+html{background:#080b11}
+body{
+  background:
+    radial-gradient(circle at 70% -10%,rgba(31,92,170,.22) 0,transparent 30%),
+    radial-gradient(circle at 8% 18%,rgba(50,82,145,.12),transparent 28%),
+    linear-gradient(180deg,#090c12,#080b11 45%,#090c12);
+  color:var(--ink);
+}
+.eyebrow{color:#8290a5}
+.glass{
+  background:linear-gradient(150deg,rgba(31,38,50,.82),rgba(18,23,32,.62));
+  border-color:rgba(255,255,255,.10);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 20px 65px rgba(0,0,0,.32);
+}
+.nav{
+  background:rgba(8,11,17,.72);
+  border-bottom-color:rgba(255,255,255,.07);
+  -webkit-backdrop-filter:blur(24px) saturate(145%);
+}
+.links a{color:#c9d2df}
+.btn.soft,.smallBtn,.mobileMenuClose{
+  background:rgba(255,255,255,.055);
+  border-color:var(--line);
+  color:#e9eef6;
+}
+.btn.ghost{color:#e9eef6}
+.heroWrap{background:#111722}
+.heroPhoto{
+  background:
+    linear-gradient(90deg,rgba(8,11,17,.97) 0%,rgba(8,11,17,.88) 42%,rgba(8,11,17,.32) 67%,rgba(8,11,17,.12) 100%),
+    url('https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1800&q=85') center/cover no-repeat;
+}
+.filterCell,
+.inventoryTop input,.inventoryTop select,
+.adminToolbar input,.adminToolbar select,.fieldInput{
+  background:rgba(255,255,255,.055);
+  border-color:rgba(255,255,255,.09);
+  color:#f3f6fb;
+}
+.filterCell label,.field label{color:#9aa7b8}
+.filterCell select,.filterCell input{color:#f3f6fb}
+input::placeholder,textarea::placeholder{color:#6f7b8e}
+select option{background:#121722;color:#f3f6fb}
+.carCard{
+  background:#11161f;
+  border-color:rgba(255,255,255,.08);
+}
+.carImage{background-color:#151c27}
+.heart{background:rgba(12,16,23,.76);color:#f4f7fb}
+.pill,.status{background:rgba(42,168,112,.14);color:#63e1a7}
+.pill.pending,.status.Pending{background:rgba(238,161,12,.14);color:#f4bd52}
+.pill.sold,.status.Sold{background:rgba(255,255,255,.07);color:#aab4c2}
+.pill.coming,.status.ComingSoon{background:rgba(61,150,255,.14);color:#75b7ff}
+.iconBubble,.featureItem:before{background:rgba(61,150,255,.13)}
+.cityBanner{
+  background:
+    linear-gradient(90deg,rgba(8,11,17,.97),rgba(8,11,17,.78),rgba(8,11,17,.20)),
+    url('https://images.unsplash.com/photo-1444723121867-7a241cacace9?auto=format&fit=crop&w=1800&q=82') center/cover no-repeat;
+}
+.footer{background:rgba(10,14,20,.74)}
+.check{color:#c0cad8}
+.empty{border-color:#303b4a}
+.gallery{background:#101720}
+.thumbs{background:rgba(7,10,15,.84)}
+.mapMock{background:linear-gradient(135deg,#101722,#171e29)}
+.mapMock:before{
+  background-image:
+    linear-gradient(24deg,transparent 45%,rgba(135,154,179,.11) 46%,rgba(135,154,179,.11) 48%,transparent 49%),
+    linear-gradient(92deg,transparent 40%,rgba(135,154,179,.09) 41%,rgba(135,154,179,.09) 43%,transparent 44%);
+}
+.adminShell{background:#090d13}
+.adminSide{background:rgba(12,16,23,.84)}
+.adminMenu a{color:#9ca8b9}
+.adminMenu a.active{background:rgba(61,150,255,.14);color:#78b9ff}
+.tableWrap{background:rgba(17,22,31,.78)}
+.adminTable th{color:#929eb0;background:#111722}
+.modal{background:rgba(0,0,0,.66)}
+.modalCard{background:#0f141d;box-shadow:0 35px 110px rgba(0,0,0,.58)}
+.step{background:#27303c}
+.photoDrop{background:#111720;border-color:#344052}
+.previewImage{background-color:#141b25}
+.mobileBottom{background:rgba(15,20,29,.92)!important}
+.stockLine{color:#818da0}
+@media(max-width:640px){
+  .heroPhoto{
+    background:
+      linear-gradient(180deg,rgba(8,11,17,.98) 0%,rgba(8,11,17,.90) 54%,rgba(8,11,17,.30) 76%,rgba(8,11,17,.11) 100%),
+      url('https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1800&q=85') 67% bottom/cover no-repeat;
+  }
+}

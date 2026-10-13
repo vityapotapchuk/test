@@ -183,3 +183,8 @@ select option{background:#121722;color:#f3f6fb}
   .vehicleFeatureText b{font-size:17px}
   .vehicleFeatureText span{font-size:16px}
 }
+
+/* Simplified VDP information hierarchy */
+.simplifiedDetails .detailBox:first-child{grid-column:1/-1}
+.simplifiedDetails .vehicleDescription{max-width:920px}
+@media(max-width:700px){.simplifiedDetails{grid-template-columns:1fr}}

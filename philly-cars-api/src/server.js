@@ -153,6 +153,172 @@ async function decodeVinForImport(vin) {
   };
 }
 
+async function fetchNhtsaRecalls(year,make,model) {
+  if(!year||!make||!model)return null;
+  const params=new URLSearchParams({
+    make:String(make),
+    model:String(model),
+    modelYear:String(year)
+  });
+  const url='https://api.nhtsa.gov/recalls/recallsByVehicle?'+params.toString();
+  const response=await fetch(url,{
+    headers:{'User-Agent':'PhillyCars/1.0','Accept':'application/json'},
+    signal:AbortSignal.timeout(12000)
+  });
+  if(!response.ok)throw new Error('nhtsa_recalls_unavailable');
+  const data=await response.json();
+  const results=Array.isArray(data?.results)?data.results:[];
+  return {
+    count:results.length,
+    sourceUrl:url,
+    campaigns:results.slice(0,12).map(r=>({
+      campaignNumber:r.NHTSACampaignNumber||null,
+      component:r.Component||null,
+      reportReceivedDate:r.ReportReceivedDate||null,
+      summary:r.Summary||null
+    }))
+  };
+}
+
+function buildVehicleDescription(vehicle,{carfaxSummary=null,vinDecode=null,recalls=null}={}) {
+  const year=Number(vehicle.year)||'';
+  const make=String(vehicle.make||'').trim();
+  const model=String(vehicle.model||'').trim();
+  const trim=String(vehicle.trim||'').trim();
+  const name=[year,make,model,trim].filter(Boolean).join(' ');
+  const mileage=Number(vehicle.mileage||0);
+  const body=vehicle.body_style||vinDecode?.bodyStyle||vinDecode?.bodyClass||'';
+  const drivetrain=vehicle.drivetrain||vinDecode?.drivetrain||'';
+  const transmission=vehicle.transmission||vinDecode?.transmission||'';
+  const engine=vehicle.engine||vinDecode?.engine||'';
+  const fuel=vehicle.fuel_type||vinDecode?.fuelType||'';
+  const exterior=String(vehicle.exterior_color||'').trim();
+  const interior=String(vehicle.interior_color||'').trim();
+
+  const intro=[];
+  intro.push(`${name || 'This vehicle'} is listed by Philly Cars${body ? ' as a '+body : ''}.`);
+  if(mileage>0)intro.push(`The odometer is recorded at ${new Intl.NumberFormat('en-US').format(mileage)} miles.`);
+  const colorBits=[];
+  if(exterior)colorBits.push(exterior+' exterior');
+  if(interior)colorBits.push(interior+' interior');
+  if(colorBits.length)intro.push(`The vehicle is configured with a ${colorBits.join(' and ')}.`);
+
+  const specBits=[];
+  if(engine)specBits.push(engine+' engine');
+  if(transmission)specBits.push(transmission+' transmission');
+  if(drivetrain)specBits.push(drivetrain+' drivetrain');
+  if(fuel)specBits.push(fuel+' fuel type');
+  let specs='';
+  if(specBits.length){
+    specs=`Official NHTSA VIN data and the vehicle record identify ${specBits.join(', ')}.`;
+    const extra=[];
+    if(vinDecode?.manufacturer)extra.push('manufacturer: '+vinDecode.manufacturer);
+    if(vinDecode?.vehicleType)extra.push('vehicle type: '+vinDecode.vehicleType);
+    if(vinDecode?.bodyClass && vinDecode.bodyClass!==body)extra.push('NHTSA body class: '+vinDecode.bodyClass);
+    if(extra.length)specs+=' '+extra.join('; ')+'.';
+  }
+
+  let history='';
+  if(carfaxSummary){
+    const historyBits=[];
+    if(carfaxSummary.owners!=null)historyBits.push(`${carfaxSummary.owners} owner${carfaxSummary.owners===1?'':'s'} reported`);
+    if(carfaxSummary.serviceRecords!=null)historyBits.push(`${carfaxSummary.serviceRecords} service history record${carfaxSummary.serviceRecords===1?'':'s'}`);
+    if(carfaxSummary.usage?.length)historyBits.push('usage reported as '+carfaxSummary.usage.join(', '));
+    if(carfaxSummary.titleStatus)historyBits.push('title status parsed as '+carfaxSummary.titleStatus);
+    if(carfaxSummary.accidentCount!=null && carfaxSummary.accidentCount>0){
+      historyBits.push(`${carfaxSummary.accidentCount} accident/damage record${carfaxSummary.accidentCount===1?'':'s'} reported`);
+    }else if(carfaxSummary.accidentReported||carfaxSummary.damageReported){
+      historyBits.push('an accident or damage entry reported');
+    }else{
+      historyBits.push('no accident or damage entry flagged in the parsed CARFAX summary');
+    }
+    history='The imported CARFAX report shows '+historyBits.join(', ')+'.';
+    if(carfaxSummary.reportDate)history+=' Report date: '+carfaxSummary.reportDate+'.';
+  }
+
+  let safety='';
+  if(recalls){
+    if(recalls.count>0){
+      safety=`NHTSA's public recall database currently returns ${recalls.count} recall campaign${recalls.count===1?'':'s'} for this year/make/model combination. Campaign presence at the model level does not establish this VIN's current recall status or whether repairs have already been completed; VIN-specific recall status should be verified with NHTSA or an authorized dealer.`;
+    }else{
+      safety="NHTSA's public year/make/model recall search did not return a campaign for this combination at the time this description was generated. VIN-specific recall status should still be verified before sale.";
+    }
+  }
+
+  const closing=[];
+  if(vehicle.title_status)closing.push('Title: '+vehicle.title_status+'.');
+  if(vehicle.stock_number)closing.push('Philly Cars stock #'+vehicle.stock_number+'.');
+  if(vehicle.vin)closing.push('VIN: '+vehicle.vin+'.');
+
+  return [intro.join(' '),specs,history,safety,closing.join(' ')]
+    .filter(Boolean)
+    .join('\n\n')
+    .trim();
+}
+
+async function generateAndPersistVehicleDescription(vehicleId,{knownCarfax=null,knownVinDecode=null}={}) {
+  const vehicleResult=await pool.query('SELECT * FROM vehicles WHERE id=$1',[vehicleId]);
+  if(!vehicleResult.rowCount)throw new Error('vehicle_not_found');
+  const vehicle=vehicleResult.rows[0];
+
+  let carfaxSummary=knownCarfax;
+  let vinDecode=knownVinDecode;
+  let carfaxDocument=null;
+
+  if(!carfaxSummary){
+    const carfaxResult=await pool.query(`
+      SELECT id,original_name,parsed_data,created_at
+      FROM vehicle_documents
+      WHERE vehicle_id=$1 AND kind='carfax'
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,[vehicleId]);
+    if(carfaxResult.rowCount){
+      carfaxDocument=carfaxResult.rows[0];
+      carfaxSummary=carfaxDocument.parsed_data?.summary||null;
+      vinDecode=vinDecode||carfaxDocument.parsed_data?.vinDecode||null;
+    }
+  }
+
+  if(!vinDecode && vehicle.vin){
+    try{vinDecode=await decodeVinForImport(vehicle.vin);}
+    catch(err){app.log.warn({err,vehicleId,vin:vehicle.vin},'Description VIN enrichment unavailable');}
+  }
+
+  let recalls=null;
+  try{recalls=await fetchNhtsaRecalls(vehicle.year,vehicle.make,vehicle.model);}
+  catch(err){app.log.warn({err,vehicleId},'Description recall enrichment unavailable');}
+
+  const description=buildVehicleDescription(vehicle,{carfaxSummary,vinDecode,recalls});
+  const generatedAt=new Date().toISOString();
+  const sources={
+    generator:'philly-cars-facts-v1',
+    generatedAt,
+    carfax:carfaxSummary?{
+      documentId:carfaxDocument?.id||null,
+      originalName:carfaxDocument?.original_name||null,
+      reportDate:carfaxSummary.reportDate||null
+    }:null,
+    nhtsaVpic:vehicle.vin?{
+      url:'https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended/'+encodeURIComponent(vehicle.vin)+'?format=json'
+    }:null,
+    nhtsaRecalls:recalls?{
+      url:recalls.sourceUrl,
+      count:recalls.count,
+      campaigns:recalls.campaigns
+    }:null
+  };
+
+  const updated=await pool.query(`
+    UPDATE vehicles
+    SET description=$1,description_generated_at=$2,description_sources=$3,updated_at=now()
+    WHERE id=$4
+    RETURNING *
+  `,[description,generatedAt,JSON.stringify(sources),vehicleId]);
+
+  return {vehicle:updated.rows[0],sources};
+}
+
 function parseGoogleDriveFolderLink(value='') {
   const raw=String(value||'').trim();
   if(!raw)return null;

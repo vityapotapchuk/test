@@ -190,13 +190,16 @@ async function bootstrapAdmin() {
   const extraRole = process.env.ADMIN_EXTRA_ROLE === 'owner' ? 'owner' : 'manager';
   if (extraEmail && extraPassword) {
     const hash = await bcrypt.hash(extraPassword, 12);
-    await pool.query(`
+    const normalizedEmail=String(extraEmail).trim().toLowerCase();
+    const provisioned=await pool.query(`
       INSERT INTO admin_users(email,password_hash,role,active)
       VALUES($1,$2,$3,true)
       ON CONFLICT (email)
       DO UPDATE SET password_hash=EXCLUDED.password_hash, role=EXCLUDED.role, active=true
-    `, [String(extraEmail).trim().toLowerCase(), hash, extraRole]);
-    app.log.info({ email: String(extraEmail).trim().toLowerCase(), role: extraRole }, 'Extra admin account provisioned');
+      RETURNING id
+    `, [normalizedEmail, hash, extraRole]);
+    await pool.query('DELETE FROM admin_sessions WHERE user_id=$1', [provisioned.rows[0].id]);
+    app.log.info({ email: normalizedEmail, role: extraRole }, 'Extra admin account provisioned');
   }
 }
 

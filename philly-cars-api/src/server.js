@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import pg from 'pg';
@@ -17,6 +18,9 @@ const origins = [process.env.CLIENT_ORIGIN, process.env.ADMIN_ORIGIN].filter(Boo
 const devOriginAllowed = origin => /^https:\/\/philly-cars(?:-admin)?-dev\.onrender\.com$/i.test(origin || '');
 
 await app.register(cookie);
+await app.register(multipart, {
+  limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 10 }
+});
 await app.register(cors, {
   origin(origin, cb) {
     if (!origin || origins.includes(origin) || devOriginAllowed(origin)) return cb(null, true);
@@ -121,6 +125,17 @@ app.get('/api/v1/vehicles/:slug', async (req, reply) => {
   return result.rows[0];
 });
 
+app.get('/api/v1/vehicle-images/:id', async (req, reply) => {
+  const result = await pool.query(
+    'SELECT content_type,image_data FROM vehicle_images WHERE id=$1',
+    [req.params.id]
+  );
+  if (!result.rowCount || !result.rows[0].image_data) return reply.code(404).send({ error: 'image_not_found' });
+  reply.header('Content-Type', result.rows[0].content_type || 'image/jpeg');
+  reply.header('Cache-Control', 'public, max-age=31536000, immutable');
+  return reply.send(result.rows[0].image_data);
+});
+
 app.post('/api/v1/leads', async (req, reply) => {
   const b = req.body || {};
   if (!b.type || !b.name) return reply.code(400).send({ error: 'type_and_name_required' });
@@ -222,7 +237,25 @@ app.get('/api/v1/admin/vin/:vin', { preHandler: requireAdmin }, async (req, repl
 });
 
 app.get('/api/v1/admin/vehicles', { preHandler: requireAdmin }, async () => {
-  const result = await pool.query('SELECT * FROM vehicles ORDER BY created_at DESC');
+  const result = await pool.query(`
+    SELECT v.*,
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'id', vi.id,
+          'path', vi.path,
+          'alt_text', vi.alt_text,
+          'sort_order', vi.sort_order,
+          'is_cover', vi.is_cover,
+          'content_type', vi.content_type,
+          'original_name', vi.original_name,
+          'size_bytes', vi.size_bytes
+        ) ORDER BY vi.is_cover DESC, vi.sort_order ASC, vi.created_at ASC)
+        FROM vehicle_images vi
+        WHERE vi.vehicle_id=v.id
+      ), '[]'::jsonb) AS images
+    FROM vehicles v
+    ORDER BY v.created_at DESC
+  `);
   return { vehicles: result.rows };
 });
 
@@ -259,6 +292,158 @@ app.post('/api/v1/admin/vehicles/:id/archive', { preHandler: requireAdmin }, asy
   const result = await pool.query(`UPDATE vehicles SET status='archived',updated_at=now() WHERE id=$1 RETURNING id,status`, [req.params.id]);
   if (!result.rowCount) return reply.code(404).send({ error:'not_found' });
   return result.rows[0];
+});
+
+app.post('/api/v1/admin/vehicles/:id/images', { preHandler: requireAdmin }, async (req, reply) => {
+  const vehicle = await pool.query('SELECT id,year,make,model FROM vehicles WHERE id=$1', [req.params.id]);
+  if (!vehicle.rowCount) return reply.code(404).send({ error: 'vehicle_not_found' });
+
+  let part;
+  try {
+    part = await req.file();
+  } catch (err) {
+    if (err?.statusCode === 413) return reply.code(413).send({ error: 'image_too_large', maxBytes: 8 * 1024 * 1024 });
+    throw err;
+  }
+  if (!part) return reply.code(400).send({ error: 'image_required' });
+
+  const allowed = new Set(['image/jpeg','image/png','image/webp','image/avif']);
+  if (!allowed.has(part.mimetype)) {
+    part.file.resume();
+    return reply.code(415).send({ error: 'unsupported_image_type', allowed: [...allowed] });
+  }
+
+  let data;
+  try {
+    data = await part.toBuffer();
+  } catch (err) {
+    if (err?.statusCode === 413 || err?.code === 'FST_REQ_FILE_TOO_LARGE') {
+      return reply.code(413).send({ error: 'image_too_large', maxBytes: 8 * 1024 * 1024 });
+    }
+    throw err;
+  }
+  if (!data?.length) return reply.code(400).send({ error: 'empty_image' });
+
+  const stats = await pool.query(
+    'SELECT count(*)::int AS count, coalesce(max(sort_order),-1)::int AS max_sort FROM vehicle_images WHERE vehicle_id=$1',
+    [req.params.id]
+  );
+  const first = stats.rows[0].count === 0;
+  const sortOrder = stats.rows[0].max_sort + 1;
+  const imageId = crypto.randomUUID();
+  const path = '/api/v1/vehicle-images/' + imageId;
+  const alt = `${vehicle.rows[0].year} ${vehicle.rows[0].make} ${vehicle.rows[0].model}`;
+
+  const result = await pool.query(`
+    INSERT INTO vehicle_images(id,vehicle_id,path,alt_text,sort_order,is_cover,content_type,original_name,size_bytes,image_data)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    RETURNING id,path,alt_text,sort_order,is_cover,content_type,original_name,size_bytes,created_at
+  `, [
+    imageId, req.params.id, path, alt, sortOrder, first,
+    part.mimetype, part.filename || null, data.length, data
+  ]);
+  return reply.code(201).send(result.rows[0]);
+});
+
+app.patch('/api/v1/admin/vehicles/:vehicleId/images/:imageId', { preHandler: requireAdmin }, async (req, reply) => {
+  const { isCover, sortOrder, altText } = req.body || {};
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const exists = await client.query(
+      'SELECT id FROM vehicle_images WHERE id=$1 AND vehicle_id=$2',
+      [req.params.imageId, req.params.vehicleId]
+    );
+    if (!exists.rowCount) {
+      await client.query('ROLLBACK');
+      return reply.code(404).send({ error: 'image_not_found' });
+    }
+    if (isCover === true) {
+      await client.query('UPDATE vehicle_images SET is_cover=false WHERE vehicle_id=$1', [req.params.vehicleId]);
+    }
+    const sets=[]; const values=[];
+    if (isCover !== undefined) { values.push(Boolean(isCover)); sets.push(`is_cover=${values.length}`); }
+    if (sortOrder !== undefined) { values.push(Number(sortOrder)); sets.push(`sort_order=${values.length}`); }
+    if (altText !== undefined) { values.push(altText || null); sets.push(`alt_text=${values.length}`); }
+    if (!sets.length) {
+      await client.query('ROLLBACK');
+      return reply.code(400).send({ error: 'no_changes' });
+    }
+    values.push(req.params.imageId, req.params.vehicleId);
+    const result = await client.query(
+      `UPDATE vehicle_images SET ${sets.join(',')} WHERE id=${values.length-1} AND vehicle_id=${values.length}
+       RETURNING id,path,alt_text,sort_order,is_cover,content_type,original_name,size_bytes`,
+      values
+    );
+    await client.query('COMMIT');
+    return result.rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/api/v1/admin/vehicles/:id/images/order', { preHandler: requireAdmin }, async (req, reply) => {
+  const imageIds = req.body?.imageIds;
+  if (!Array.isArray(imageIds) || !imageIds.length) return reply.code(400).send({ error: 'image_ids_required' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query(
+      'SELECT id FROM vehicle_images WHERE vehicle_id=$1',
+      [req.params.id]
+    );
+    const allowed = new Set(existing.rows.map(r => r.id));
+    if (imageIds.some(id => !allowed.has(id)) || imageIds.length !== allowed.size) {
+      await client.query('ROLLBACK');
+      return reply.code(400).send({ error: 'image_order_mismatch' });
+    }
+    for (let i=0;i<imageIds.length;i++) {
+      await client.query('UPDATE vehicle_images SET sort_order=$1 WHERE id=$2 AND vehicle_id=$3', [i,imageIds[i],req.params.id]);
+    }
+    await client.query('COMMIT');
+    return { ok:true };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/v1/admin/vehicles/:vehicleId/images/:imageId', { preHandler: requireAdmin }, async (req, reply) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const deleted = await client.query(
+      'DELETE FROM vehicle_images WHERE id=$1 AND vehicle_id=$2 RETURNING is_cover',
+      [req.params.imageId, req.params.vehicleId]
+    );
+    if (!deleted.rowCount) {
+      await client.query('ROLLBACK');
+      return reply.code(404).send({ error: 'image_not_found' });
+    }
+    if (deleted.rows[0].is_cover) {
+      await client.query(`
+        UPDATE vehicle_images SET is_cover=true
+        WHERE id=(
+          SELECT id FROM vehicle_images
+          WHERE vehicle_id=$1
+          ORDER BY sort_order ASC, created_at ASC
+          LIMIT 1
+        )
+      `, [req.params.vehicleId]);
+    }
+    await client.query('COMMIT');
+    return { ok:true };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 app.get('/api/v1/admin/vehicles/:id/publications', { preHandler: requireAdmin }, async (req, reply) => {

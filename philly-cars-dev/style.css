@@ -117,3 +117,5 @@ select option{background:#121722;color:#f3f6fb}
       url('https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1800&q=85') 67% bottom/cover no-repeat;
   }
 }
+
+.vehicleDescription{white-space:pre-line;line-height:1.68}

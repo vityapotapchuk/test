@@ -243,3 +243,10 @@ select option{background:#121722;color:#f3f6fb}
 @media (max-width:1180px), (max-width:1366px) and (pointer:coarse){
   .adminMobileBar{background:rgba(9,13,19,.93)!important}
 }
+
+/* Auto-generated vehicle descriptions */
+.descriptionEditor{display:grid;gap:10px;padding:14px;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.035)}
+.descriptionEditorHead{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.descriptionEditorHead b{display:block;margin-bottom:4px}
+.descriptionTextarea{min-height:230px;resize:vertical;line-height:1.55;white-space:pre-wrap}
+@media(max-width:700px){.descriptionEditorHead{flex-direction:column}.descriptionEditorHead .btn{width:100%}}

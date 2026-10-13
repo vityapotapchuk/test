@@ -98,6 +98,8 @@ function carfaxSummaryHtml(v){
     <div><span class="muted">Service records</span><b>${summary.serviceRecords??'—'}</b></div>
     <div><span class="muted">Usage</span><b>${usage}</b></div>
     <div><span class="muted">Transmission</span><b>${summary.transmission||v.trans||'—'}</b></div>
+    <div><span class="muted">Exterior color</span><b>${summary.exteriorColor||v.color||'—'}</b></div>
+    <div><span class="muted">Interior color</span><b>${summary.interiorColor||v.interior||'—'}</b></div>
     <div><span class="muted">Title</span><b>${summary.titleStatus||'—'}</b></div>
     <button type="button" class="btn soft full" onclick="openCarfaxDocument('${doc.document_id}')">Open original CARFAX PDF</button>
   </div>`;

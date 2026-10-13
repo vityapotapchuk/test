@@ -487,7 +487,23 @@ async function generateAndPersistVehicleDescription(vehicleId,{knownCarfax=null,
   const backfillValues=[];
   if(!String(vehicle.exterior_color||'').trim() && carfaxSummary?.exteriorColor){
     backfillValues.push(carfaxSummary.exteriorColor);
-    backfillSets.push('exterior_color=
+    backfillSets.push('exterior_color=$'+backfillValues.length);
+  }
+  if(!String(vehicle.interior_color||'').trim() && carfaxSummary?.interiorColor){
+    backfillValues.push(carfaxSummary.interiorColor);
+    backfillSets.push('interior_color=$'+backfillValues.length);
+  }
+  if(backfillSets.length){
+    backfillValues.push(vehicleId);
+    const colorUpdate=await pool.query(
+      'UPDATE vehicles SET '+backfillSets.join(',')+',updated_at=now() WHERE id=$'+backfillValues.length+' RETURNING *',
+      backfillValues
+    );
+    if(colorUpdate.rowCount)vehicle=colorUpdate.rows[0];
+  }
+
+  const detailedTransmission=carfaxSummary?.transmission||vinDecode?.transmission||'';
+  const currentTransmission=String(vehicle.transmission||'').trim();
   const currentIsGeneric=/^(automatic|manual)$/i.test(currentTransmission);
   if(detailedTransmission && (!currentTransmission||currentIsGeneric) && detailedTransmission.toLowerCase()!==currentTransmission.toLowerCase()){
     const transmissionUpdate=await pool.query(

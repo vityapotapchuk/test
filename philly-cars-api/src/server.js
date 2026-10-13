@@ -40,7 +40,7 @@ const PUBLIC_SITE_URL=String(process.env.CLIENT_ORIGIN||'https://philly-cars-dev
 const csvCell=value=>'"'+String(value??'').replace(/"/g,'""').replace(/[\r\n]+/g,' ').trim()+'"';
 const tsvCell=value=>String(value??'').replace(/[\t\r\n]+/g,' ').trim();
 const absoluteApiOrigin=req=>String(process.env.PUBLIC_API_URL||(`${req.protocol}://${req.headers.host}`)).replace(/\/$/,'');
-const vehicleVdpUrl=vehicle=>PUBLIC_SITE_URL+'/#/vehicle/'+encodeURIComponent(vehicle.slug);
+const vehicleVdpUrl=vehicle=>PUBLIC_SITE_URL+'/#/car/'+encodeURIComponent(vehicle.slug);
 const absoluteVehicleImageUrl=(req,path)=>path?(path.startsWith('http')?path:absoluteApiOrigin(req)+path):'';
 
 async function getDistributionInventory() {

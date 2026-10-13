@@ -34,6 +34,7 @@ CLIENT_ORIGIN=
 ADMIN_ORIGIN=
 SESSION_COOKIE_NAME=philly_admin_session
 SESSION_TTL_DAYS=14
+GOOGLE_DRIVE_API_KEY=
 ```
 
 ## Vehicle photo workflow
@@ -47,3 +48,7 @@ Do not commit database passwords, session secrets, private keys, or other creden
 ## CARFAX import
 
 Admin can upload a CARFAX PDF to create an inventory vehicle automatically. The API extracts the VIN and readable report data, enriches vehicle specifications through NHTSA vPIC, stores the original report and extracted text, and creates the vehicle with status `acquired`. Acquired vehicles stay hidden from the public inventory until moved to a publishable status.
+
+## Google Drive vehicle photos
+
+For a saved vehicle, Admin can store a public Google Drive folder URL and import its images. The folder must be shared as **Anyone with the link**. The API lists the public folder using `GOOGLE_DRIVE_API_KEY`, downloads image files, converts them to WebP (max 1920px, quality 82), appends them to the vehicle gallery, and records the Drive file IDs so re-imports skip duplicates. Nested public folders are supported up to the server safety limits.

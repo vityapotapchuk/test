@@ -80,12 +80,43 @@ app.get('/api/v1/vehicles', async req => {
   if (year) add('year = ?', Number(year));
   if (maxPrice) add('price <= ?', Number(maxPrice));
   if (q) add(`(make || ' ' || model || ' ' || coalesce(trim,'')) ILIKE ?`, `%${q}%`);
-  const result = await pool.query(`SELECT * FROM vehicles WHERE ${where.join(' AND ')} ORDER BY created_at DESC`, values);
+  const result = await pool.query(`
+    SELECT v.*,
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'id', vi.id,
+          'path', vi.path,
+          'alt_text', vi.alt_text,
+          'sort_order', vi.sort_order,
+          'is_cover', vi.is_cover
+        ) ORDER BY vi.is_cover DESC, vi.sort_order ASC, vi.created_at ASC)
+        FROM vehicle_images vi
+        WHERE vi.vehicle_id=v.id
+      ), '[]'::jsonb) AS images
+    FROM vehicles v
+    WHERE ${where.join(' AND ')}
+    ORDER BY v.created_at DESC
+  `, values);
   return { vehicles: result.rows };
 });
 
 app.get('/api/v1/vehicles/:slug', async (req, reply) => {
-  const result = await pool.query(`SELECT * FROM vehicles WHERE slug=$1 AND status IN ('ready_to_publish','available','deposit','sold')`, [req.params.slug]);
+  const result = await pool.query(`
+    SELECT v.*,
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'id', vi.id,
+          'path', vi.path,
+          'alt_text', vi.alt_text,
+          'sort_order', vi.sort_order,
+          'is_cover', vi.is_cover
+        ) ORDER BY vi.is_cover DESC, vi.sort_order ASC, vi.created_at ASC)
+        FROM vehicle_images vi
+        WHERE vi.vehicle_id=v.id
+      ), '[]'::jsonb) AS images
+    FROM vehicles v
+    WHERE v.slug=$1 AND v.status IN ('ready_to_publish','available','deposit','sold')
+  `, [req.params.slug]);
   if (!result.rowCount) return reply.code(404).send({ error: 'not_found' });
   return result.rows[0];
 });

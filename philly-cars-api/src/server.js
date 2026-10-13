@@ -815,6 +815,10 @@ app.post('/api/v1/admin/import/carfax', { preHandler: requireAdmin }, async (req
     return reply.code(422).send({error:'vehicle_identity_incomplete'});
   }
 
+  let recalls=null;
+  try{recalls=await fetchNhtsaRecalls(decoded.year,decoded.make,decoded.model);}
+  catch(err){req.log.warn({err,vin:summary.vin},'CARFAX description recall enrichment unavailable');}
+
   const digest=crypto.createHash('sha256').update(pdfBuffer).digest('hex');
   const client=await pool.connect();
   try {
@@ -839,10 +843,6 @@ app.post('/api/v1/admin/import/carfax', { preHandler: requireAdmin }, async (req
     const slug=`${decoded.year}-${slugify(decoded.make)}-${slugify(decoded.model)}-${slugify(stockNumber)}`;
     const acquiredAt=new Date().toISOString().slice(0,10);
     const titleStatus=summary.titleStatus||'Other';
-
-    let recalls=null;
-    try{recalls=await fetchNhtsaRecalls(decoded.year,decoded.make,decoded.model);}
-    catch(err){req.log.warn({err,vin:summary.vin},'CARFAX description recall enrichment unavailable');}
 
     const descriptionSeed={
       year:decoded.year,make:decoded.make,model:decoded.model,trim:decoded.trim||null,

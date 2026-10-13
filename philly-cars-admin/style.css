@@ -41,3 +41,29 @@
 .carfaxSummary>div{display:flex;flex-direction:column;gap:4px;padding:12px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.62)}
 .carfaxSummary span{font-size:10px}.carfaxSummary b{font-size:12px}
 @media(max-width:700px){.carfaxSummary{grid-template-columns:1fr 1fr}.carfaxImportCard{max-width:none}}
+
+/* Mobile admin navigation */
+.mobileMenuButton{display:none;width:44px;height:44px;border:1px solid rgba(16,46,83,.10);border-radius:14px;background:rgba(255,255,255,.78);align-items:center;justify-content:center;flex-direction:column;gap:4px;padding:0;box-shadow:0 8px 24px rgba(34,57,83,.08)}
+.mobileMenuButton span{display:block;width:18px;height:2px;border-radius:999px;background:#172033;transition:transform .2s ease,opacity .2s ease}
+.mobileMenuButton[aria-expanded="true"] span:nth-child(1){transform:translateY(6px) rotate(45deg)}
+.mobileMenuButton[aria-expanded="true"] span:nth-child(2){opacity:0}
+.mobileMenuButton[aria-expanded="true"] span:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
+.mobileMenuBackdrop{display:none;position:fixed;inset:0;background:rgba(9,18,31,.30);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .22s ease;z-index:198}
+.mobileMenuDrawer{display:none;position:fixed;top:0;right:0;bottom:0;width:min(86vw,360px);background:rgba(248,250,253,.97);backdrop-filter:blur(28px);border-left:1px solid rgba(255,255,255,.75);box-shadow:-24px 0 64px rgba(20,36,57,.16);padding:calc(16px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom));z-index:199;transform:translateX(105%);transition:transform .24s cubic-bezier(.2,.8,.2,1);flex-direction:column}
+.mobileMenuHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+.mobileMenuClose{width:40px;height:40px;border:1px solid var(--line);border-radius:13px;background:#fff;font-size:18px}
+.mobileMenuNav{display:grid;gap:8px;margin-top:10px}
+.mobileMenuNav a{display:flex;align-items:center;gap:12px;text-decoration:none;color:#3f4d61;padding:14px 15px;border-radius:15px;font-size:15px}
+.mobileMenuNav a span{width:26px;text-align:center;font-size:19px}
+.mobileMenuNav a.active{background:#fff;color:#145fd7;box-shadow:0 8px 24px rgba(30,69,119,.08)}
+.mobileMenuNav a b{font-weight:750}
+.mobileMenuFooter{margin-top:auto;display:grid;gap:10px}
+.mobileMenuFooter .adminBadge{text-align:center}
+body.mobileMenuOpen{overflow:hidden}
+@media(max-width:820px){
+  .mobileMenuButton{display:flex}
+  .mobileMenuBackdrop,.mobileMenuDrawer{display:flex}
+  .mobileMenuBackdrop.open{opacity:1;pointer-events:auto}
+  .mobileMenuDrawer.open{transform:translateX(0)}
+  .adminMobileBar .actions{display:none!important}
+}

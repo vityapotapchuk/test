@@ -27,7 +27,7 @@ function apiToUiVehicle(v){
     id:v.slug,dbId:v.id,slug:v.slug,year:v.year,make:v.make,model:v.model,trim:v.trim||'',
     mileage:+v.mileage||0,price:+v.price||0,body:v.body_style||'',color:v.exterior_color||'',
     interior:v.interior_color||'',drive:v.drivetrain||'',trans:v.transmission||'',engine:v.engine||'',
-    fuel:v.fuel_type||'',status:API_TO_UI_STATUS[v.status]||'Available',stock:v.stock_number||'',
+    fuel:v.fuel_type||'',mpg:+v.mpg_combined||0,status:API_TO_UI_STATUS[v.status]||'Available',stock:v.stock_number||'',
     vin:v.vin||'',title:v.title_status||'',features:Array.isArray(v.features)?v.features:[],
     description:v.description||'',images:Array.isArray(v.images)?v.images:[]
   };
@@ -54,6 +54,49 @@ const PLACEHOLDER_IMAGE="data:image/svg+xml;charset=UTF-8,"+encodeURIComponent('
 const imageUrl=path=>!path?'':path.startsWith('/')?API_BASE+path:path;
 const img=v=>{const cover=v.images?.find(x=>x.is_cover)||v.images?.[0];return cover?.path?imageUrl(cover.path):(v.customImage||PLACEHOLDER_IMAGE)};
 const slugStatus=s=>s==='Coming Soon'?'ComingSoon':s;
+function featureSpecIcon(type){
+  const common='viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+  const icons={
+    mileage:`<svg ${common}><path d="M8 30a16 16 0 0 1 32 0"/><path d="M24 30l8-10"/><circle cx="24" cy="30" r="3"/><path d="M13 34h22"/></svg>`,
+    drivetrain:`<svg ${common}><rect x="7" y="8" width="10" height="10" rx="3"/><rect x="31" y="8" width="10" height="10" rx="3"/><rect x="7" y="30" width="10" height="10" rx="3"/><rect x="31" y="30" width="10" height="10" rx="3"/><path d="M17 13h14M17 35h14M24 13v22"/></svg>`,
+    color:`<svg ${common}><path d="M24 6S13 20 13 29a11 11 0 0 0 22 0C35 20 24 6 24 6Z"/></svg>`,
+    mpg:`<svg ${common}><path d="M12 8h20v32H12z"/><path d="M16 13h12v9H16z"/><path d="M32 16h5l4 5v13a4 4 0 0 1-8 0v-8"/><path d="M19 31c3-6 7-6 10 0-3 5-7 5-10 0Z"/></svg>`,
+    engine:`<svg ${common}><path d="M13 17h20l5 6v14H10V22z"/><path d="M17 17v-6h12v6M38 26h4v8h-4M10 25H6v9h4"/><circle cx="24" cy="28" r="6"/></svg>`,
+    fuel:`<svg ${common}><path d="M12 7h20v34H12z"/><path d="M16 12h12v10H16z"/><path d="M32 14h5l4 5v15a4 4 0 0 1-8 0v-7"/><path d="M37 14v7h4"/></svg>`,
+    transmission:`<svg ${common}><circle cx="12" cy="10" r="3"/><circle cx="24" cy="10" r="3"/><circle cx="36" cy="10" r="3"/><circle cx="12" cy="38" r="3"/><circle cx="24" cy="38" r="3"/><circle cx="36" cy="38" r="3"/><path d="M12 13v22M24 13v22M36 13v22M12 24h24"/></svg>`,
+    wheel:`<svg ${common}><circle cx="24" cy="24" r="17"/><circle cx="24" cy="24" r="9"/><circle cx="24" cy="24" r="2"/><path d="M24 15v5M24 28v5M15 24h5M28 24h5M18 18l4 4M26 26l4 4M30 18l-4 4M22 26l-4 4"/></svg>`,
+    title:`<svg ${common}><path d="M13 7h17l6 6v28H13z"/><path d="M30 7v7h6M18 23h13M18 29h13M18 35h9"/></svg>`
+  };
+  return icons[type]||icons.title;
+}
+function vehicleFeaturePanel(v){
+  const alloy=(v.features||[]).some(f=>/alloy\s*wheels?|wheels?\s*[- ]?alloy/i.test(String(f)));
+  const secondary=v.mpg
+    ?{type:'mpg',label:'MPG',value:v.mpg+' MPG'}
+    :{type:'color',label:'Interior color',value:v.interior||'Not listed'};
+  const final=alloy
+    ?{type:'wheel',label:'Alloy wheels',value:'Included'}
+    :{type:'title',label:'Title',value:v.title||'Not listed'};
+  const items=[
+    {type:'mileage',label:'Mileage',value:new Intl.NumberFormat('en-US').format(+v.mileage||0)},
+    {type:'drivetrain',label:'Drivetrain',value:v.drive||'Not listed'},
+    {type:'color',label:'Exterior color',value:v.color||'Not listed'},
+    secondary,
+    {type:'engine',label:'Engine',value:v.engine||'Not listed'},
+    {type:'fuel',label:'Fuel type',value:v.fuel||'Not listed'},
+    {type:'transmission',label:'Transmission',value:v.trans||'Not listed'},
+    final
+  ];
+  return `<section class="vehicleFeaturePanel glass">
+    <h2>Features</h2>
+    <div class="vehicleFeatureGrid">
+      ${items.map(item=>`<div class="vehicleFeature">
+        <div class="vehicleFeatureIcon">${featureSpecIcon(item.type)}</div>
+        <div class="vehicleFeatureText"><b>${item.label}</b><span>${item.value}</span></div>
+      </div>`).join('')}
+    </div>
+  </section>`;
+}
 function toast(msg){const el=document.createElement('div');el.className='toast';el.textContent=msg;document.getElementById('toast-root').appendChild(el);setTimeout(()=>el.remove(),2200)}
 function icon(n){return {'home':'⌂','car':'▰','heart':'♡','menu':'☰','trade':'↔','sell':'◇','about':'◌','contact':'✉','admin':'⌘'}[n]||'•'}
 function header(){return `<header class="nav"><div class="container navin"><a class="brand" href="#/"><span class="logo"></span>Philly Cars</a><nav class="links"><a href="#/inventory">Inventory</a><a href="#/trade-in">Trade-In</a><a href="#/sell">Sell Your Car</a><a href="#/about">About</a><a href="#/contact">Contact</a></nav><div class="navActions"><a class="btn soft" href="#/saved">♡ Saved <span id="savedCount">${saved.size}</span></a><a class="btn blue" href="#/inventory">Browse Inventory →</a><button class="btn soft iconBtn mobileMenu" onclick="openMobileNav()">☰</button></div></div></header>`}
@@ -73,7 +116,7 @@ function detail(id){
   const v=cars.find(x=>x.id===id);if(!v)return notFound();
   const gallery=(v.images||[]).length?(v.images||[]):[{path:img(v),is_cover:true}];
   const cover=gallery.find(x=>x.is_cover)||gallery[0];
-  return `${header()}<main class="page"><div class="container"><section class="detailHero"><div class="eyebrow">Inventory / ${v.make}</div><h1 style="font-size:clamp(40px,5vw,64px);margin:8px 0 8px">${v.year} ${v.make} ${v.model}</h1><p class="muted">${v.trim} · ${v.drive} · ${miles(v.mileage)} · Stock #${v.stock}</p></section><section class="detailTop"><div><div class="gallery glass"><div id="galleryMain" class="galleryMain" style="background-image:url('${imageUrl(cover.path)||img(v)}')"></div><div class="thumbs">${gallery.map((p,i)=>`<button class="thumb" aria-label="View photo ${i+1}" style="background-image:url('${imageUrl(p.path)||img(v)}')" onclick="setGalleryImage('${imageUrl(p.path)||img(v)}')"></button>`).join('')}</div></div><div class="specStrip">${[['Year',v.year],['Mileage',miles(v.mileage)],['Drivetrain',v.drive],['Transmission',v.trans],['Body Style',v.body]].map(x=>`<div class="spec glass"><small class="muted">${x[0]}</small><b>${x[1]}</b></div>`).join('')}</div><div class="detailSections"><div class="detailBox glass"><div class="eyebrow">Overview</div><h2>${v.trim}</h2><p class="muted vehicleDescription">${v.description||'Vehicle information is managed directly from the Philly Cars inventory system so pricing and availability stay consistent.'}</p></div><div class="detailBox glass"><div class="eyebrow">Features</div><h2>Highlights</h2><div class="featureList">${v.features.length?v.features.map(f=>`<div class="featureItem">${f}</div>`).join(''):'<div class="muted">Features coming soon.</div>'}</div></div><div class="detailBox glass"><div class="eyebrow">Vehicle details</div><h2>Specs</h2><p class="muted">Exterior: <b>${v.color||'—'}</b><br>Interior: <b>${v.interior||'—'}</b><br>Engine: <b>${v.engine||'—'}</b><br>Fuel: <b>${v.fuel||'—'}</b><br>Title: <b>${v.title||'—'}</b></p></div><div class="detailBox glass"><div class="eyebrow">Interested?</div><h2>Ask about this vehicle.</h2><p class="muted">Send a quick inquiry and reference stock #${v.stock}.</p><button class="btn blue" onclick="quickInquiry('${v.id}')">Send Inquiry →</button></div></div></div><aside class="stickyCard glass"><span class="pill ${v.status==='Pending'?'pending':v.status==='Coming Soon'?'coming':''}">${v.status}</span><div class="price" style="margin-top:12px">${money(v.price)}</div><p class="muted">${miles(v.mileage)}</p><button class="btn blue" onclick="toast('Dealership phone will be connected before launch')">☎ Call Dealer</button><button class="btn soft" onclick="toast('Dealership SMS will be connected before launch')">Message Us</button><button class="btn soft" onclick="quickInquiry('${v.id}','test-drive')">Schedule Test Drive</button><button class="btn ghost" onclick="toggleSaved('${v.id}',this)">${saved.has(v.id)?'♥ Saved':'♡ Save Vehicle'}</button></aside></section></div></main>${footer()}${mobileBottom()}`
+  return `${header()}<main class="page"><div class="container"><section class="detailHero"><div class="eyebrow">Inventory / ${v.make}</div><h1 style="font-size:clamp(40px,5vw,64px);margin:8px 0 8px">${v.year} ${v.make} ${v.model}</h1><p class="muted">${v.trim} · ${v.drive} · ${miles(v.mileage)} · Stock #${v.stock}</p></section><section class="detailTop"><div><div class="gallery glass"><div id="galleryMain" class="galleryMain" style="background-image:url('${imageUrl(cover.path)||img(v)}')"></div><div class="thumbs">${gallery.map((p,i)=>`<button class="thumb" aria-label="View photo ${i+1}" style="background-image:url('${imageUrl(p.path)||img(v)}')" onclick="setGalleryImage('${imageUrl(p.path)||img(v)}')"></button>`).join('')}</div></div><div class="specStrip">${[['Year',v.year],['Mileage',miles(v.mileage)],['Drivetrain',v.drive],['Transmission',v.trans],['Body Style',v.body]].map(x=>`<div class="spec glass"><small class="muted">${x[0]}</small><b>${x[1]}</b></div>`).join('')}</div>${vehicleFeaturePanel(v)}<div class="detailSections"><div class="detailBox glass"><div class="eyebrow">Overview</div><h2>${v.trim}</h2><p class="muted vehicleDescription">${v.description||'Vehicle information is managed directly from the Philly Cars inventory system so pricing and availability stay consistent.'}</p></div><div class="detailBox glass"><div class="eyebrow">Features</div><h2>Highlights</h2><div class="featureList">${v.features.length?v.features.map(f=>`<div class="featureItem">${f}</div>`).join(''):'<div class="muted">Features coming soon.</div>'}</div></div><div class="detailBox glass"><div class="eyebrow">Vehicle details</div><h2>Specs</h2><p class="muted">Exterior: <b>${v.color||'—'}</b><br>Interior: <b>${v.interior||'—'}</b><br>Engine: <b>${v.engine||'—'}</b><br>Fuel: <b>${v.fuel||'—'}</b><br>Title: <b>${v.title||'—'}</b></p></div><div class="detailBox glass"><div class="eyebrow">Interested?</div><h2>Ask about this vehicle.</h2><p class="muted">Send a quick inquiry and reference stock #${v.stock}.</p><button class="btn blue" onclick="quickInquiry('${v.id}')">Send Inquiry →</button></div></div></div><aside class="stickyCard glass"><span class="pill ${v.status==='Pending'?'pending':v.status==='Coming Soon'?'coming':''}">${v.status}</span><div class="price" style="margin-top:12px">${money(v.price)}</div><p class="muted">${miles(v.mileage)}</p><button class="btn blue" onclick="toast('Dealership phone will be connected before launch')">☎ Call Dealer</button><button class="btn soft" onclick="toast('Dealership SMS will be connected before launch')">Message Us</button><button class="btn soft" onclick="quickInquiry('${v.id}','test-drive')">Schedule Test Drive</button><button class="btn ghost" onclick="toggleSaved('${v.id}',this)">${saved.has(v.id)?'♥ Saved':'♡ Save Vehicle'}</button></aside></section></div></main>${footer()}${mobileBottom()}`
 }
 window.setGalleryImage=url=>{const el=document.getElementById('galleryMain');if(el)el.style.backgroundImage=`url('${url}')`}
 window.quickInquiry=(id,type='inquiry')=>{const v=cars.find(x=>x.id===id);openLeadModal(type,`${v.year} ${v.make} ${v.model}`,v.stock)}

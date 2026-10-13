@@ -170,14 +170,34 @@ async function ensureSchema() {
 
 async function bootstrapAdmin() {
   if (!pool) return;
-  const email = process.env.ADMIN_BOOTSTRAP_EMAIL;
-  const password = process.env.ADMIN_BOOTSTRAP_PASSWORD;
-  if (!email || !password || password.startsWith('change-this')) return;
-  const exists = await pool.query('SELECT id FROM admin_users WHERE lower(email)=lower($1)', [email]);
-  if (exists.rowCount) return;
-  const hash = await bcrypt.hash(password, 12);
-  await pool.query('INSERT INTO admin_users(email,password_hash,role) VALUES($1,$2,$3)', [email, hash, 'owner']);
-  app.log.info({ email }, 'Bootstrap owner created');
+
+  const primaryEmail = process.env.ADMIN_BOOTSTRAP_EMAIL;
+  const primaryPassword = process.env.ADMIN_BOOTSTRAP_PASSWORD;
+  if (primaryEmail && primaryPassword && !primaryPassword.startsWith('change-this')) {
+    const exists = await pool.query('SELECT id FROM admin_users WHERE lower(email)=lower($1)', [primaryEmail]);
+    if (!exists.rowCount) {
+      const hash = await bcrypt.hash(primaryPassword, 12);
+      await pool.query(
+        'INSERT INTO admin_users(email,password_hash,role) VALUES($1,$2,$3)',
+        [primaryEmail, hash, 'owner']
+      );
+      app.log.info({ email: primaryEmail }, 'Bootstrap owner created');
+    }
+  }
+
+  const extraEmail = process.env.ADMIN_EXTRA_EMAIL;
+  const extraPassword = process.env.ADMIN_EXTRA_PASSWORD;
+  const extraRole = process.env.ADMIN_EXTRA_ROLE === 'owner' ? 'owner' : 'manager';
+  if (extraEmail && extraPassword) {
+    const hash = await bcrypt.hash(extraPassword, 12);
+    await pool.query(`
+      INSERT INTO admin_users(email,password_hash,role,active)
+      VALUES($1,$2,$3,true)
+      ON CONFLICT (email)
+      DO UPDATE SET password_hash=EXCLUDED.password_hash, role=EXCLUDED.role, active=true
+    `, [String(extraEmail).trim().toLowerCase(), hash, extraRole]);
+    app.log.info({ email: String(extraEmail).trim().toLowerCase(), role: extraRole }, 'Extra admin account provisioned');
+  }
 }
 
 async function requireAdmin(req, reply) {

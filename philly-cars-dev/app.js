@@ -89,19 +89,21 @@ function featureSpecIcon(type){
 function vehicleFeaturePanel(v){
   const items=[
     {type:'mileage',label:'Mileage',value:new Intl.NumberFormat('en-US').format(+v.mileage||0)},
-    {type:'drivetrain',label:'Drivetrain',value:v.drive||'Not listed'},
-    {type:'color',label:'Exterior color',value:v.color||'Not listed'},
-    {type:'color',label:'Interior color',value:v.interior||'Not listed'},
-    {type:'engine',label:'Engine',value:v.engine||'Not listed'},
-    {type:'fuel',label:'Fuel type',value:v.fuel||'Not listed'},
-    {type:'transmission',label:'Transmission',value:v.trans||'Not listed'},
-    {type:'title',label:'Title',value:v.title||'Not listed'}
+    {type:'drivetrain',label:'Drivetrain',value:v.drive},
+    {type:'color',label:'Exterior color',value:v.color},
+    {type:'color',label:'Interior color',value:v.interior},
+    {type:'engine',label:'Engine',value:v.engine},
+    {type:'fuel',label:'Fuel type',value:v.fuel},
+    {type:'transmission',label:'Transmission',value:v.trans},
+    {type:'title',label:'Title',value:v.title}
   ];
-  if(v.mpg)items.push({type:'mpg',label:'Combined MPG',value:v.mpg+' MPG'});
+  const visibleItems=items.filter(item=>item.value!==null&&item.value!==undefined&&item.value!=='');
+  if(v.mpg)visibleItems.push({type:'mpg',label:'Combined MPG',value:v.mpg+' MPG'});
+  if(!visibleItems.length)return '';
   return `<section class="vehicleFeaturePanel glass">
     <h2>Features</h2>
     <div class="vehicleFeatureGrid">
-      ${items.map(item=>`<div class="vehicleFeature">
+      ${visibleItems.map(item=>`<div class="vehicleFeature">
         <div class="vehicleFeatureIcon">${featureSpecIcon(item.type)}</div>
         <div class="vehicleFeatureText"><b>${item.label}</b><span>${item.value}</span></div>
       </div>`).join('')}

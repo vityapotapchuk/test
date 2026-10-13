@@ -1231,9 +1231,9 @@ app.post('/api/v1/admin/vehicles', { preHandler: requireAdmin }, async (req, rep
   if (!b.make || !b.model || !b.year || b.price == null || !b.stockNumber) return reply.code(400).send({ error: 'missing_required_fields' });
   const slug = b.slug || `${b.year}-${slugify(b.make)}-${slugify(b.model)}-${slugify(b.stockNumber)}`;
   const result = await pool.query(`
-    INSERT INTO vehicles(slug,stock_number,vin,year,make,model,trim,price,mileage,purchase_price,auction_fees,transport_cost,recon_cost,other_cost,acquired_at,body_style,exterior_color,interior_color,drivetrain,transmission,engine,fuel_type,title_status,status,description,features)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING *
-  `,[slug,b.stockNumber,b.vin||null,Number(b.year),b.make,b.model,b.trim||null,Number(b.price||0),Number(b.mileage||0),Number(b.purchasePrice||0),Number(b.auctionFees||0),Number(b.transportCost||0),Number(b.reconCost||0),Number(b.otherCost||0),b.acquiredAt||null,b.bodyStyle||null,b.exteriorColor||null,b.interiorColor||null,b.drivetrain||null,b.transmission||null,b.engine||null,b.fuelType||null,b.titleStatus||null,b.status||'acquired',b.description||null,JSON.stringify(b.features||[])]);
+    INSERT INTO vehicles(slug,stock_number,vin,year,make,model,trim,price,mileage,purchase_price,auction_fees,transport_cost,recon_cost,other_cost,acquired_at,body_style,exterior_color,interior_color,drivetrain,transmission,engine,fuel_type,mpg_combined,title_status,status,description,features)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27) RETURNING *
+  `,[slug,b.stockNumber,b.vin||null,Number(b.year),b.make,b.model,b.trim||null,Number(b.price||0),Number(b.mileage||0),Number(b.purchasePrice||0),Number(b.auctionFees||0),Number(b.transportCost||0),Number(b.reconCost||0),Number(b.otherCost||0),b.acquiredAt||null,b.bodyStyle||null,b.exteriorColor||null,b.interiorColor||null,b.drivetrain||null,b.transmission||null,b.engine||null,b.fuelType||null,b.mpgCombined?Number(b.mpgCombined):null,b.titleStatus||null,b.status||'acquired',b.description||null,JSON.stringify(b.features||[])]);
   try{
     const generated=await generateAndPersistVehicleDescription(result.rows[0].id);
     return reply.code(201).send(generated.vehicle);
@@ -1247,7 +1247,7 @@ app.patch('/api/v1/admin/vehicles/:id', { preHandler: requireAdmin }, async (req
   const allowed = {
     stockNumber:'stock_number', vin:'vin', year:'year', make:'make', model:'model', trim:'trim', price:'price', mileage:'mileage', purchasePrice:'purchase_price', auctionFees:'auction_fees', transportCost:'transport_cost', reconCost:'recon_cost', otherCost:'other_cost', acquiredAt:'acquired_at',
     bodyStyle:'body_style', exteriorColor:'exterior_color', interiorColor:'interior_color', drivetrain:'drivetrain', transmission:'transmission',
-    engine:'engine', fuelType:'fuel_type', titleStatus:'title_status', status:'status', description:'description', features:'features', photoSourceUrl:'photo_source_url'
+    engine:'engine', fuelType:'fuel_type', mpgCombined:'mpg_combined', titleStatus:'title_status', status:'status', description:'description', features:'features', photoSourceUrl:'photo_source_url'
   };
   const sets=[]; const values=[];
   for (const [key,col] of Object.entries(allowed)) if (Object.hasOwn(req.body||{}, key)) {

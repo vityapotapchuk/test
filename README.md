@@ -43,3 +43,7 @@ Vehicle photos can be uploaded from Admin. Images are resized to a maximum 1920p
 ## Important
 
 Do not commit database passwords, session secrets, private keys, or other credentials.
+
+## CARFAX import
+
+Admin can upload a CARFAX PDF to create an inventory vehicle automatically. The API extracts the VIN and readable report data, enriches vehicle specifications through NHTSA vPIC, stores the original report and extracted text, and creates the vehicle with status `acquired`. Acquired vehicles stay hidden from the public inventory until moved to a publishable status.

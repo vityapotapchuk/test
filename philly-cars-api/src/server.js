@@ -477,6 +477,26 @@ async function listPublicGoogleDriveImages(folderUrl) {
         signal:AbortSignal.timeout(15000)
       });
       if(!response.ok){
+        let googleError={};
+        try{googleError=await response.json();}catch{}
+        const message=String(googleError?.error?.message||'');
+        const reason=String(googleError?.error?.errors?.[0]?.reason||'');
+        app.log.warn({
+          status:response.status,
+          reason:reason||null,
+          googleMessage:message||null,
+          folderId:folder.folderId
+        },'Google Drive public-folder list failed');
+
+        if(response.status===400 && /api key not valid|invalid api key/i.test(message)){
+          throw new Error('google_drive_api_key_invalid');
+        }
+        if(response.status===403 && /api.*not.*enabled|accessnotconfigured|service disabled/i.test(message+' '+reason)){
+          throw new Error('google_drive_api_disabled');
+        }
+        if(response.status===403 && /referer|referrer|ip address|blocked|forbidden/i.test(message+' '+reason)){
+          throw new Error('google_drive_api_key_restricted');
+        }
         if(response.status===403||response.status===404)throw new Error('google_drive_folder_not_public');
         throw new Error('google_drive_list_failed');
       }
@@ -1226,6 +1246,15 @@ app.post('/api/v1/admin/vehicles/:id/archive', { preHandler: requireAdmin }, asy
   return result.rows[0];
 });
 
+app.get('/api/v1/admin/google-drive/status', { preHandler: requireAdmin }, async () => {
+  const key=String(process.env.GOOGLE_DRIVE_API_KEY||'').trim();
+  return {
+    configured:Boolean(key),
+    keyFormatValid:/^AIza[0-9A-Za-z_-]{20,}$/.test(key),
+    keyLength:key.length
+  };
+});
+
 app.post('/api/v1/admin/vehicles/:id/images/import-drive', { preHandler: requireAdmin }, async (req, reply) => {
   const folderUrl=String(req.body?.folderUrl||'').trim();
   if(!folderUrl)return reply.code(400).send({error:'google_drive_folder_url_required'});
@@ -1242,6 +1271,9 @@ app.post('/api/v1/admin/vehicles/:id/images/import-drive', { preHandler: require
   }catch(err){
     const code=String(err?.message||'google_drive_list_failed');
     const status=code==='google_drive_not_configured'?503:
+      code==='google_drive_api_key_invalid'?503:
+      code==='google_drive_api_disabled'?503:
+      code==='google_drive_api_key_restricted'?503:
       code==='invalid_google_drive_folder_url'?400:
       code==='google_drive_folder_not_public'?403:502;
     return reply.code(status).send({error:code});
@@ -1640,4 +1672,12 @@ app.patch('/api/v1/admin/leads/:id', { preHandler: requireAdmin }, async (req, r
 
 await ensureSchema();
 await bootstrapAdmin();
+{
+  const driveKey=String(process.env.GOOGLE_DRIVE_API_KEY||'').trim();
+  app.log.info({
+    configured:Boolean(driveKey),
+    keyFormatValid:/^AIza[0-9A-Za-z_-]{20,}$/.test(driveKey),
+    keyLength:driveKey.length
+  },'Google Drive integration diagnostics');
+}
 await app.listen({ port: PORT, host: '0.0.0.0' });

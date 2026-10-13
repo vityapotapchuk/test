@@ -234,6 +234,14 @@ function distribution(){
       ${CHANNELS.map(([,label])=>`<div class="channelCard glass connectionLoading"><h3>${label}</h3><p class="muted">Loading connection…</p></div>`).join('')}
     </section>
 
+    <section class="adminPanel glass" style="margin-top:18px">
+      <div class="sectionHead"><div><div class="eyebrow">Personal Facebook profile</div><h2>Marketplace listing assistant</h2></div></div>
+      <p class="muted">Prepare a listing from your vehicle inventory. Copy the description, download the photos and publish manually in Facebook Marketplace. No Facebook login or automatic posting is performed.</p>
+      <div class="field"><label for="facebookDraftVehicle">Choose vehicle</label><select class="fieldInput" id="facebookDraftVehicle"><option value="">Select a vehicle</option>${cars.filter(v=>v.id&&['Ready to Publish','Available','Deposit'].includes(v.status)).map(v=>`<option value="${esc(v.id)}">${esc(v.year+' '+v.make+' '+v.model+' · '+v.stock)}</option>`).join('')}</select></div>
+      <button class="btn blue" onclick="prepareFacebookDraft()">Prepare Marketplace Listing</button>
+      <div id="facebookDraftResult" style="margin-top:14px" aria-live="polite"></div>
+    </section>
+
     <section class="adminPanel glass distributionFeedPanel" style="margin-top:18px">
       <div class="sectionHead">
         <div><div class="eyebrow">Feed endpoints</div><h2>Inventory feeds</h2></div>
@@ -366,6 +374,18 @@ async function loadDistributionConnections(){
     if(cards)cards.innerHTML='<div class="notice">Could not load distribution connections.</div>';
   }
 }
+
+window.prepareFacebookDraft=async()=>{
+  const id=document.getElementById('facebookDraftVehicle')?.value;
+  const output=document.getElementById('facebookDraftResult');
+  if(!id||!output){toast('Choose a vehicle first');return}
+  output.textContent='Preparing listing…';
+  try{
+    const draft=await apiFetch('/api/v1/admin/distribution/facebook-draft/'+encodeURIComponent(id));
+    window.facebookDraftText=draft.description;
+    output.innerHTML=`<div class="notice"><b>${esc(draft.title)}</b> · ${money(draft.price)}<p class="muted">Review all details before posting. This listing is not published yet.</p><textarea class="fieldInput" rows="12" readonly>${esc(draft.description)}</textarea><div class="connectionActions"><button class="smallBtn" onclick="copyText(window.facebookDraftText)">Copy Listing Text</button><a class="smallBtn" href="https://www.facebook.com/marketplace/create/vehicle" target="_blank" rel="noopener noreferrer">Open Facebook Marketplace ↗</a></div><div class="muted" style="margin-top:12px">Vehicle photos (open and save each image for upload):</div>${draft.photos.map((p,i)=>`<p><a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">Photo ${i+1} ↗</a></p>`).join('')||'<p class="muted">No photos available. Add photos before posting.</p>'}</div>`;
+  }catch(err){output.textContent='Could not prepare listing. Check API connection and try again.'}
+};
 
 window.copyText=async value=>{
   try{await navigator.clipboard.writeText(value);toast('Copied')}catch{toast('Copy failed')}

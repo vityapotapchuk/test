@@ -21,6 +21,11 @@ CREATE TABLE IF NOT EXISTS vehicle_images (
   path text NOT NULL, alt_text text, sort_order int NOT NULL DEFAULT 0, is_cover boolean NOT NULL DEFAULT false, created_at timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS content_type text;
+ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS original_name text;
+ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS size_bytes integer;
+ALTER TABLE vehicle_images ADD COLUMN IF NOT EXISTS image_data bytea;
+
 CREATE TABLE IF NOT EXISTS vehicle_publications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   vehicle_id uuid NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,

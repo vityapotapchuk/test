@@ -135,10 +135,86 @@ window.clearFilters=()=>{location.hash='/inventory';setTimeout(applyFilters,0)}
 function detail(id){
   const v=cars.find(x=>x.id===id);if(!v)return notFound();
   const gallery=(v.images||[]).length?(v.images||[]):[{path:img(v),is_cover:true}];
-  const cover=gallery.find(x=>x.is_cover)||gallery[0];
-  return `${header()}<main class="page"><div class="container"><section class="detailHero"><div class="eyebrow">Inventory / ${v.make}</div><h1 style="font-size:clamp(40px,5vw,64px);margin:8px 0 8px">${v.year} ${v.make} ${v.model}</h1><p class="muted">${[v.trim,`Stock #${v.stock}`].filter(Boolean).join(' · ')}</p></section><section class="detailTop"><div><div class="gallery glass"><div id="galleryMain" class="galleryMain" style="background-image:url('${imageUrl(cover.path)||img(v)}')"></div><div class="thumbs">${gallery.map((p,i)=>`<button class="thumb" aria-label="View photo ${i+1}" style="background-image:url('${imageUrl(p.path)||img(v)}')" onclick="setGalleryImage('${imageUrl(p.path)||img(v)}')"></button>`).join('')}</div></div>${vehicleFeaturePanel(v)}<div class="detailSections simplifiedDetails"><div class="detailBox glass"><div class="eyebrow">Overview</div><h2>About this vehicle</h2><p class="muted vehicleDescription">${vehicleOverview(v)}</p></div><div class="detailBox glass"><div class="eyebrow">Equipment</div><h2>Highlights</h2><div class="featureList">${v.features.length?v.features.map(f=>`<div class="featureItem">${f}</div>`).join(''):'<div class="muted">Equipment details coming soon.</div>'}</div></div><div class="detailBox glass"><div class="eyebrow">Interested?</div><h2>Ask about this vehicle.</h2><p class="muted">Reference stock #${v.stock} when you contact us.</p><button class="btn blue" onclick="quickInquiry('${v.id}')">Send Inquiry →</button></div></div></div><aside class="stickyCard glass"><span class="pill ${v.status==='Pending'?'pending':v.status==='Coming Soon'?'coming':''}">${v.status}</span><div class="price" style="margin-top:12px">${money(v.price)}</div><button class="btn blue" onclick="toast('Dealership phone will be connected before launch')">☎ Call Dealer</button><button class="btn soft" onclick="toast('Dealership SMS will be connected before launch')">Message Us</button><button class="btn soft" onclick="quickInquiry('${v.id}','test-drive')">Schedule Test Drive</button><button class="btn ghost" onclick="toggleSaved('${v.id}',this)">${saved.has(v.id)?'♥ Saved':'♡ Save Vehicle'}</button></aside></section></div></main>${footer()}${mobileBottom()}`
+  const galleryUrls=gallery.map(p=>imageUrl(p.path)||img(v));
+  const coverIndex=Math.max(0,gallery.findIndex(x=>x.is_cover));
+  window.vehicleGalleryState={images:galleryUrls,index:coverIndex};
+
+  return `${header()}<main class="page">
+    <div class="container">
+      <section class="detailHero">
+        <div class="eyebrow">Inventory / ${v.make}</div>
+        <h1 style="font-size:clamp(40px,5vw,64px);margin:8px 0 8px">${v.year} ${v.make} ${v.model}</h1>
+        <p class="muted">${[v.trim,`Stock #${v.stock}`].filter(Boolean).join(' · ')}</p>
+      </section>
+
+      <section class="vehicleSliderFullBleed">
+        <div class="vehicleSlider" id="vehicleSlider" ontouchstart="galleryTouchStart(event)" ontouchend="galleryTouchEnd(event)">
+          <div class="vehicleSliderStage">
+            <img id="galleryMainImage" class="vehicleSliderImage" src="${galleryUrls[coverIndex]}" alt="${v.year} ${v.make} ${v.model}">
+            ${galleryUrls.length>1?`
+              <button class="vehicleSliderArrow prev" aria-label="Previous photo" onclick="galleryPrev()">‹</button>
+              <button class="vehicleSliderArrow next" aria-label="Next photo" onclick="galleryNext()">›</button>
+            `:''}
+            <div class="vehicleSliderCounter" id="galleryCounter">${coverIndex+1} / ${galleryUrls.length}</div>
+          </div>
+          ${galleryUrls.length>1?`
+            <div class="vehicleSliderThumbs" id="galleryThumbs">
+              ${galleryUrls.map((url,i)=>`<button class="vehicleSliderThumb ${i===coverIndex?'active':''}" aria-label="View photo ${i+1}" onclick="setGalleryIndex(${i})"><img src="${url}" alt=""></button>`).join('')}
+            </div>
+          `:''}
+        </div>
+      </section>
+
+      <section class="detailTop detailTopAfterGallery">
+        <div>
+          ${vehicleFeaturePanel(v)}
+          <div class="detailSections simplifiedDetails">
+            <div class="detailBox glass"><div class="eyebrow">Overview</div><h2>About this vehicle</h2><p class="muted vehicleDescription">${vehicleOverview(v)}</p></div>
+            <div class="detailBox glass"><div class="eyebrow">Equipment</div><h2>Highlights</h2><div class="featureList">${v.features.length?v.features.map(f=>`<div class="featureItem">${f}</div>`).join(''):'<div class="muted">Equipment details coming soon.</div>'}</div></div>
+            <div class="detailBox glass"><div class="eyebrow">Interested?</div><h2>Ask about this vehicle.</h2><p class="muted">Reference stock #${v.stock} when you contact us.</p><button class="btn blue" onclick="quickInquiry('${v.id}')">Send Inquiry →</button></div>
+          </div>
+        </div>
+        <aside class="stickyCard glass">
+          <span class="pill ${v.status==='Pending'?'pending':v.status==='Coming Soon'?'coming':''}">${v.status}</span>
+          <div class="price" style="margin-top:12px">${money(v.price)}</div>
+          <button class="btn blue" onclick="toast('Dealership phone will be connected before launch')">☎ Call Dealer</button>
+          <button class="btn soft" onclick="toast('Dealership SMS will be connected before launch')">Message Us</button>
+          <button class="btn soft" onclick="quickInquiry('${v.id}','test-drive')">Schedule Test Drive</button>
+          <button class="btn ghost" onclick="toggleSaved('${v.id}',this)">${saved.has(v.id)?'♥ Saved':'♡ Save Vehicle'}</button>
+        </aside>
+      </section>
+    </div>
+  </main>${footer()}${mobileBottom()}`;
 }
-window.setGalleryImage=url=>{const el=document.getElementById('galleryMain');if(el)el.style.backgroundImage=`url('${url}')`}
+
+let galleryTouchX=0;
+window.galleryTouchStart=e=>{galleryTouchX=e.changedTouches?.[0]?.clientX||0};
+window.galleryTouchEnd=e=>{
+  const end=e.changedTouches?.[0]?.clientX||0;
+  const delta=end-galleryTouchX;
+  if(Math.abs(delta)<45)return;
+  delta<0?galleryNext():galleryPrev();
+};
+window.setGalleryIndex=index=>{
+  const state=window.vehicleGalleryState;
+  if(!state?.images?.length)return;
+  const count=state.images.length;
+  state.index=(Number(index)+count)%count;
+  const image=document.getElementById('galleryMainImage');
+  const counter=document.getElementById('galleryCounter');
+  if(image){
+    image.classList.add('changing');
+    image.src=state.images[state.index];
+    requestAnimationFrame(()=>requestAnimationFrame(()=>image.classList.remove('changing')));
+  }
+  if(counter)counter.textContent=`${state.index+1} / ${count}`;
+  document.querySelectorAll('.vehicleSliderThumb').forEach((thumb,i)=>{
+    thumb.classList.toggle('active',i===state.index);
+    if(i===state.index)thumb.scrollIntoView({behavior:'smooth',block:'nearest',inline:'center'});
+  });
+};
+window.galleryPrev=()=>setGalleryIndex((window.vehicleGalleryState?.index||0)-1);
+window.galleryNext=()=>setGalleryIndex((window.vehicleGalleryState?.index||0)+1);
 window.quickInquiry=(id,type='inquiry')=>{const v=cars.find(x=>x.id===id);openLeadModal(type,`${v.year} ${v.make} ${v.model}`,v.stock)}
 function genericForm(kind,title,sub,button){return `${header()}<main class="page"><div class="container"><section class="pageHero"><div class="eyebrow">Philly Cars · Philadelphia</div><h1>${title}</h1><p class="muted">${sub}</p></section><section class="formCard glass"><form onsubmit="submitLead(event,'${kind}')"><div class="formGrid"><div class="field"><label>Full Name</label><input class="fieldInput" name="name" required placeholder="Your name"></div><div class="field"><label>Phone</label><input class="fieldInput" name="phone" required placeholder="(215) 555-0123"></div><div class="field"><label>Email</label><input class="fieldInput" name="email" type="email" placeholder="you@email.com"></div><div class="field"><label>VIN</label><input class="fieldInput" name="vin" placeholder="17-character VIN"></div><div class="field"><label>Year</label><input class="fieldInput" name="year" inputmode="numeric" placeholder="2022"></div><div class="field"><label>Make / Model</label><input class="fieldInput" name="vehicle" placeholder="BMW 330i"></div><div class="field"><label>Mileage</label><input class="fieldInput" name="mileage" inputmode="numeric" placeholder="32,000"></div><div class="field"><label>Condition</label><select class="fieldInput" name="condition"><option>Excellent</option><option>Good</option><option>Fair</option></select></div><div class="field full"><label>Notes</label><textarea class="fieldInput" name="notes" placeholder="Tell us anything useful about the vehicle."></textarea></div><button class="btn blue full">${button} →</button></div></form></section></div></main>${footer()}${mobileBottom()}`}
 window.submitLead=async(e,kind)=>{

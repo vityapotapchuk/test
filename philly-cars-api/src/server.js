@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import sharp from 'sharp';
+import { PDFParse } from 'pdf-parse';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import pg from 'pg';
@@ -34,6 +35,131 @@ await app.register(cors, {
 
 const hashToken = value => crypto.createHash('sha256').update(value).digest('hex');
 const slugify = s => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+const VIN_PATTERN = /\b[A-HJ-NPR-Z0-9]{17}\b/g;
+
+function parseCarfaxText(rawText='') {
+  const text=String(rawText||'').replace(/\u00a0/g,' ').replace(/\r/g,'');
+  const upper=text.toUpperCase();
+  const vinMatches=[...new Set(upper.match(VIN_PATTERN)||[])];
+  const vin=vinMatches[0]||null;
+
+  const mileageCandidates=[];
+  const mileagePatterns=[
+    /(\d{1,3}(?:,\d{3})+|\d{4,7})\s*(?:mi|miles)\b/gi,
+    /(?:last reported odometer reading|odometer|mileage)[^0-9]{0,40}(\d[\d,]{2,})/gi
+  ];
+  for(const re of mileagePatterns){
+    for(const m of text.matchAll(re)){
+      const n=Number(String(m[1]).replace(/,/g,''));
+      if(Number.isFinite(n)&&n>0&&n<2000000)mileageCandidates.push(n);
+    }
+  }
+  const mileage=mileageCandidates.length?Math.max(...mileageCandidates):0;
+
+  const ownerMatch=
+    text.match(/\b(\d+)\s*[- ]?owner vehicle\b/i) ||
+    text.match(/\bowners?\s*(?:reported)?\s*[:\-]?\s*(\d+)\b/i);
+  const owners=ownerMatch?Number(ownerMatch[1]):null;
+
+  const serviceMatch=
+    text.match(/\b(\d+)\s+service history records?\b/i) ||
+    text.match(/\bservice records?\s*[:\-]?\s*(\d+)\b/i);
+  const serviceRecords=serviceMatch?Number(serviceMatch[1]):null;
+
+  const accidentCountMatch=text.match(/\b(\d+)\s+(?:accident|damage)(?:\s+or\s+damage)?\s+records?\b/i);
+  const accidentCount=accidentCountMatch?Number(accidentCountMatch[1]):null;
+  const accidentReported=/\baccident reported\b|\baccident\/damage\b/i.test(text);
+  const damageReported=/\bdamage reported\b/i.test(text);
+
+  let titleStatus=null;
+  const titleBrands=[];
+  if(/\brebuilt title\b|\breconstructed title\b/i.test(text)){titleStatus='Rebuilt Title';titleBrands.push('rebuilt');}
+  else if(/\bsalvage title\b/i.test(text)){titleStatus='Salvage Title';titleBrands.push('salvage');}
+  else if(/\bno title issues reported\b|\bno title problems reported\b/i.test(text)){titleStatus='Clean Title';}
+  else if(/\bflood title\b/i.test(text)){titleStatus='Other';titleBrands.push('flood');}
+  else if(/\blemon title\b|\bmanufacturer buyback\b/i.test(text)){titleStatus='Other';titleBrands.push('lemon/buyback');}
+  else if(/\bjunk title\b/i.test(text)){titleStatus='Other';titleBrands.push('junk');}
+
+  const usage=[];
+  for(const [label,re] of [
+    ['Personal',/\bpersonal vehicle\b/i],
+    ['Rental',/\brental vehicle\b/i],
+    ['Lease',/\blease vehicle\b/i],
+    ['Commercial',/\bcommercial vehicle\b/i],
+    ['Fleet',/\bfleet vehicle\b/i]
+  ]) if(re.test(text)) usage.push(label);
+
+  const reportDateMatch=
+    text.match(/\breport date\s*[:\-]?\s*([A-Za-z]+\s+\d{1,2},\s+\d{4})/i) ||
+    text.match(/\breport date\s*[:\-]?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+
+  return {
+    vin,
+    mileage,
+    owners,
+    serviceRecords,
+    accidentReported,
+    damageReported,
+    accidentCount,
+    titleStatus,
+    titleBrands,
+    usage,
+    reportDate:reportDateMatch?reportDateMatch[1]:null,
+    textLength:text.length
+  };
+}
+
+async function decodeVinForImport(vin) {
+  const url='https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended/'+encodeURIComponent(vin)+'?format=json';
+  const response=await fetch(url,{headers:{'User-Agent':'PhillyCars/1.0'}});
+  if(!response.ok) throw new Error('vin_service_unavailable');
+  const data=await response.json();
+  const r=data?.Results?.[0]||{};
+  if(!r.Make&&!r.Model) throw new Error('vin_not_decoded');
+
+  const bodyRaw=r.BodyClass||'';
+  let bodyStyle='';
+  if(/sport utility|suv|crossover/i.test(bodyRaw))bodyStyle='SUV';
+  else if(/pickup/i.test(bodyRaw))bodyStyle='Truck';
+  else if(/hatchback/i.test(bodyRaw))bodyStyle='Hatchback';
+  else if(/coupe/i.test(bodyRaw))bodyStyle='Coupe';
+  else if(/convertible|cabriolet/i.test(bodyRaw))bodyStyle='Convertible';
+  else if(/wagon/i.test(bodyRaw))bodyStyle='Wagon';
+  else if(/sedan/i.test(bodyRaw))bodyStyle='Sedan';
+
+  const driveRaw=r.DriveType||'';
+  let drivetrain='';
+  if(/4wd|4-wheel|4x4/i.test(driveRaw))drivetrain='4WD';
+  else if(/all-wheel|awd/i.test(driveRaw))drivetrain='AWD';
+  else if(/front-wheel|fwd/i.test(driveRaw))drivetrain='FWD';
+  else if(/rear-wheel|rwd|4x2/i.test(driveRaw))drivetrain='RWD';
+
+  const displacement=r.DisplacementL?String(r.DisplacementL)+'L':'';
+  const cyl=r.EngineCylinders?' '+r.EngineCylinders+'-cyl':'';
+  const engine=[displacement+cyl,r.EngineModel||''].filter(Boolean).join(' · ');
+
+  return {
+    vin,
+    year:Number(r.ModelYear)||null,
+    make:r.Make||'',
+    model:r.Model||'',
+    trim:r.Trim||r.Series||'',
+    bodyStyle,
+    drivetrain,
+    transmission:r.TransmissionStyle||'',
+    engine,
+    fuelType:r.FuelTypePrimary||''
+  };
+}
+
+async function nextStockNumber(client) {
+  const result=await client.query(`
+    SELECT COALESCE(MAX(NULLIF(regexp_replace(stock_number,'\\D','','g'),'')::int),1059) AS max_stock
+    FROM vehicles
+  `);
+  return 'PC'+String(Number(result.rows[0].max_stock||1059)+1).padStart(4,'0');
+}
 
 async function ensureSchema() {
   if (!pool) return;
@@ -237,6 +363,143 @@ app.get('/api/v1/admin/vin/:vin', { preHandler: requireAdmin }, async (req, repl
   };
 });
 
+app.post('/api/v1/admin/import/carfax', { preHandler: requireAdmin }, async (req, reply) => {
+  let part;
+  try {
+    part=await req.file();
+  } catch (err) {
+    if(err?.statusCode===413)return reply.code(413).send({error:'carfax_file_too_large',maxBytes:20*1024*1024});
+    throw err;
+  }
+  if(!part)return reply.code(400).send({error:'carfax_pdf_required'});
+  if(part.mimetype!=='application/pdf'&&!/\.pdf$/i.test(part.filename||'')){
+    part.file.resume();
+    return reply.code(415).send({error:'carfax_pdf_required'});
+  }
+
+  let pdfBuffer;
+  try {
+    pdfBuffer=await part.toBuffer();
+  } catch (err) {
+    if(err?.statusCode===413||err?.code==='FST_REQ_FILE_TOO_LARGE'){
+      return reply.code(413).send({error:'carfax_file_too_large',maxBytes:20*1024*1024});
+    }
+    throw err;
+  }
+  if(!pdfBuffer?.length)return reply.code(400).send({error:'empty_carfax_file'});
+
+  let parser;
+  let parsedText='';
+  try {
+    parser=new PDFParse({data:pdfBuffer});
+    const parsed=await parser.getText();
+    parsedText=String(parsed?.text||'');
+  } catch (err) {
+    req.log.warn({err},'CARFAX PDF text extraction failed');
+    return reply.code(422).send({error:'carfax_pdf_unreadable'});
+  } finally {
+    try{await parser?.destroy();}catch{}
+  }
+
+  if(parsedText.trim().length<80)return reply.code(422).send({error:'carfax_text_not_found'});
+  if(!/\bCARFAX\b/i.test(parsedText))return reply.code(422).send({error:'not_carfax_report'});
+
+  const summary=parseCarfaxText(parsedText);
+  if(!summary.vin)return reply.code(422).send({error:'vin_not_found_in_carfax'});
+
+  let decoded;
+  try {
+    decoded=await decodeVinForImport(summary.vin);
+  } catch (err) {
+    req.log.warn({err,vin:summary.vin},'CARFAX VIN decode failed');
+    return reply.code(502).send({error:String(err?.message||'vin_decode_failed')});
+  }
+  if(!decoded.year||!decoded.make||!decoded.model){
+    return reply.code(422).send({error:'vehicle_identity_incomplete'});
+  }
+
+  const digest=crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+  const client=await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const sameFile=await client.query(
+      "SELECT vehicle_id FROM vehicle_documents WHERE kind='carfax' AND sha256=$1 LIMIT 1",
+      [digest]
+    );
+    if(sameFile.rowCount){
+      await client.query('ROLLBACK');
+      return reply.code(409).send({error:'carfax_already_imported',vehicleId:sameFile.rows[0].vehicle_id});
+    }
+
+    const existing=await client.query('SELECT id,stock_number FROM vehicles WHERE vin=$1 LIMIT 1',[summary.vin]);
+    if(existing.rowCount){
+      await client.query('ROLLBACK');
+      return reply.code(409).send({error:'vehicle_vin_already_exists',vehicleId:existing.rows[0].id,stockNumber:existing.rows[0].stock_number});
+    }
+
+    const stockNumber=await nextStockNumber(client);
+    const slug=`${decoded.year}-${slugify(decoded.make)}-${slugify(decoded.model)}-${slugify(stockNumber)}`;
+    const acquiredAt=new Date().toISOString().slice(0,10);
+    const titleStatus=summary.titleStatus||'Other';
+
+    const vehicleResult=await client.query(`
+      INSERT INTO vehicles(
+        slug,stock_number,vin,year,make,model,trim,price,mileage,
+        acquired_at,body_style,drivetrain,transmission,engine,fuel_type,title_status,status
+      )
+      VALUES($1,$2,$3,$4,$5,$6,$7,0,$8,$9,$10,$11,$12,$13,$14,$15,'acquired')
+      RETURNING *
+    `,[
+      slug,stockNumber,summary.vin,decoded.year,decoded.make,decoded.model,decoded.trim||null,
+      summary.mileage||0,acquiredAt,decoded.bodyStyle||null,decoded.drivetrain||null,
+      decoded.transmission||null,decoded.engine||null,decoded.fuelType||null,titleStatus
+    ]);
+    const vehicle=vehicleResult.rows[0];
+
+    const parsedData={
+      source:'carfax',
+      summary,
+      vinDecode:decoded,
+      importedAt:new Date().toISOString()
+    };
+    const documentResult=await client.query(`
+      INSERT INTO vehicle_documents(
+        vehicle_id,kind,original_name,content_type,size_bytes,sha256,document_data,parsed_text,parsed_data
+      )
+      VALUES($1,'carfax',$2,'application/pdf',$3,$4,$5,$6,$7)
+      RETURNING id,original_name,size_bytes,created_at
+    `,[
+      vehicle.id,part.filename||'carfax.pdf',pdfBuffer.length,digest,pdfBuffer,parsedText,JSON.stringify(parsedData)
+    ]);
+
+    await client.query('COMMIT');
+    return reply.code(201).send({
+      vehicle,
+      carfax:parsedData,
+      document:documentResult.rows[0]
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/v1/admin/documents/:id/file', { preHandler: requireAdmin }, async (req, reply) => {
+  const result=await pool.query(
+    'SELECT original_name,content_type,document_data FROM vehicle_documents WHERE id=$1',
+    [req.params.id]
+  );
+  if(!result.rowCount||!result.rows[0].document_data)return reply.code(404).send({error:'document_not_found'});
+  const row=result.rows[0];
+  reply.header('Content-Type',row.content_type||'application/pdf');
+  reply.header('Content-Disposition',`inline; filename="${String(row.original_name||'carfax.pdf').replace(/"/g,'')}"`);
+  reply.header('Cache-Control','private, no-store');
+  return reply.send(row.document_data);
+});
+
 app.get('/api/v1/admin/vehicles', { preHandler: requireAdmin }, async () => {
   const result = await pool.query(`
     SELECT v.*,
@@ -253,7 +516,19 @@ app.get('/api/v1/admin/vehicles', { preHandler: requireAdmin }, async () => {
         ) ORDER BY vi.is_cover DESC, vi.sort_order ASC, vi.created_at ASC)
         FROM vehicle_images vi
         WHERE vi.vehicle_id=v.id
-      ), '[]'::jsonb) AS images
+      ), '[]'::jsonb) AS images,
+      (
+        SELECT jsonb_build_object(
+          'document_id',vd.id,
+          'original_name',vd.original_name,
+          'created_at',vd.created_at,
+          'parsed_data',vd.parsed_data
+        )
+        FROM vehicle_documents vd
+        WHERE vd.vehicle_id=v.id AND vd.kind='carfax'
+        ORDER BY vd.created_at DESC
+        LIMIT 1
+      ) AS carfax
     FROM vehicles v
     ORDER BY v.created_at DESC
   `);

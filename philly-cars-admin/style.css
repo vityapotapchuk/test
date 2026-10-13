@@ -30,3 +30,14 @@
 .photoCardActions .smallBtn:disabled{opacity:.35;cursor:not-allowed}
 .photoEmpty{padding:18px;text-align:center;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.45)}
 @media(max-width:700px){.photoManager{grid-template-columns:1fr 1fr}}
+
+/* CARFAX import */
+.carfaxImportCard{max-width:620px}
+.carfaxDrop{display:grid;gap:10px;text-align:center;border:1px dashed rgba(16,46,83,.22);border-radius:20px;padding:26px;background:rgba(255,255,255,.55)}
+.carfaxDrop h3{margin:0}
+.carfaxDrop p{max-width:480px;margin:0 auto 6px}
+.carfaxIcon{width:64px;height:64px;border-radius:18px;display:grid;place-items:center;margin:0 auto;background:#eef4ff;color:#1a69ff;font-weight:800;letter-spacing:.06em}
+.carfaxSummary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:18px}
+.carfaxSummary>div{display:flex;flex-direction:column;gap:4px;padding:12px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.62)}
+.carfaxSummary span{font-size:10px}.carfaxSummary b{font-size:12px}
+@media(max-width:700px){.carfaxSummary{grid-template-columns:1fr 1fr}.carfaxImportCard{max-width:none}}

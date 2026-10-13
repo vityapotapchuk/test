@@ -22,10 +22,27 @@ let saved=new Set(JSON.parse(localStorage.getItem('phillySaved')||'[]'));
 const saveCars=()=>{};
 const saveSaved=()=>localStorage.setItem('phillySaved',JSON.stringify([...saved]));
 const API_TO_UI_STATUS={ready_to_publish:'Ready to Publish',available:'Available',deposit:'Deposit',sold:'Sold'};
+function displayMake(value){
+  const make=String(value||'').trim();
+  if(!make)return '';
+  const known={'BMW':'BMW','GMC':'GMC','RAM':'RAM','MINI':'MINI','HYUNDAI':'Hyundai','MERCEDES-BENZ':'Mercedes-Benz','VOLKSWAGEN':'Volkswagen','TOYOTA':'Toyota','HONDA':'Honda','NISSAN':'Nissan','KIA':'Kia','AUDI':'Audi','CHEVROLET':'Chevrolet','FORD':'Ford','JEEP':'Jeep','LEXUS':'Lexus','SUBARU':'Subaru','MAZDA':'Mazda','DODGE':'Dodge','PORSCHE':'Porsche'};
+  return known[make.toUpperCase()]||make.replace(/\b[a-z]/g,c=>c.toUpperCase());
+}
+function displayBody(value){
+  const body=String(value||'').trim();
+  if(/sport utility|\bsuv\b|crossover/i.test(body))return 'SUV';
+  if(/pickup|\btruck\b/i.test(body))return 'Truck';
+  if(/hatchback/i.test(body))return 'Hatchback';
+  if(/\bsedan\b|4 door sedan/i.test(body))return 'Sedan';
+  if(/\bcoupe\b/i.test(body))return 'Coupe';
+  if(/\bconvertible\b/i.test(body))return 'Convertible';
+  if(/\bwagon\b/i.test(body))return 'Wagon';
+  return body;
+}
 function apiToUiVehicle(v){
   return {
-    id:v.slug,dbId:v.id,slug:v.slug,year:v.year,make:v.make,model:v.model,trim:v.trim||'',
-    mileage:+v.mileage||0,price:+v.price||0,body:v.body_style||'',color:v.exterior_color||'',
+    id:v.slug,dbId:v.id,slug:v.slug,year:v.year,make:displayMake(v.make),model:v.model,trim:v.trim||'',
+    mileage:+v.mileage||0,price:+v.price||0,body:displayBody(v.body_style),color:v.exterior_color||'',
     interior:v.interior_color||'',drive:v.drivetrain||'',trans:v.transmission||'',engine:v.engine||'',
     fuel:v.fuel_type||'',mpg:+v.mpg_combined||0,status:API_TO_UI_STATUS[v.status]||'Available',stock:v.stock_number||'',
     vin:v.vin||'',title:v.title_status||'',features:Array.isArray(v.features)?v.features:[],

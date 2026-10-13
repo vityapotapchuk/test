@@ -119,3 +119,67 @@ select option{background:#121722;color:#f3f6fb}
 }
 
 .vehicleDescription{white-space:pre-line;line-height:1.68}
+
+/* Vehicle feature panel */
+.vehicleFeaturePanel{
+  margin:22px 0 18px;
+  padding:28px 30px 30px;
+  border-radius:26px;
+}
+.vehicleFeaturePanel h2{
+  margin:0 0 24px;
+  font-size:clamp(28px,3vw,38px);
+  letter-spacing:-.035em;
+}
+.vehicleFeatureGrid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  column-gap:46px;
+  row-gap:24px;
+}
+.vehicleFeature{
+  display:grid;
+  grid-template-columns:72px minmax(0,1fr);
+  gap:16px;
+  align-items:center;
+  min-width:0;
+}
+.vehicleFeatureIcon{
+  width:72px;
+  height:72px;
+  border:1.5px solid rgba(255,255,255,.28);
+  border-radius:50%;
+  display:grid;
+  place-items:center;
+  color:#edf3fb;
+  background:rgba(255,255,255,.018);
+}
+.vehicleFeatureIcon svg{
+  width:42px;
+  height:42px;
+}
+.vehicleFeatureText{
+  min-width:0;
+  display:grid;
+  gap:3px;
+}
+.vehicleFeatureText b{
+  font-size:18px;
+  line-height:1.15;
+  letter-spacing:-.02em;
+}
+.vehicleFeatureText span{
+  font-size:17px;
+  line-height:1.3;
+  color:var(--muted);
+  overflow-wrap:anywhere;
+}
+@media(max-width:700px){
+  .vehicleFeaturePanel{padding:22px 18px}
+  .vehicleFeatureGrid{grid-template-columns:1fr;row-gap:19px}
+  .vehicleFeature{grid-template-columns:62px minmax(0,1fr);gap:14px}
+  .vehicleFeatureIcon{width:62px;height:62px}
+  .vehicleFeatureIcon svg{width:36px;height:36px}
+  .vehicleFeatureText b{font-size:17px}
+  .vehicleFeatureText span{font-size:16px}
+}

@@ -70,23 +70,17 @@ function featureSpecIcon(type){
   return icons[type]||icons.title;
 }
 function vehicleFeaturePanel(v){
-  const alloy=(v.features||[]).some(f=>/alloy\s*wheels?|wheels?\s*[- ]?alloy/i.test(String(f)));
-  const secondary=v.mpg
-    ?{type:'mpg',label:'MPG',value:v.mpg+' MPG'}
-    :{type:'color',label:'Interior color',value:v.interior||'Not listed'};
-  const final=alloy
-    ?{type:'wheel',label:'Alloy wheels',value:'Included'}
-    :{type:'title',label:'Title',value:v.title||'Not listed'};
   const items=[
     {type:'mileage',label:'Mileage',value:new Intl.NumberFormat('en-US').format(+v.mileage||0)},
     {type:'drivetrain',label:'Drivetrain',value:v.drive||'Not listed'},
     {type:'color',label:'Exterior color',value:v.color||'Not listed'},
-    secondary,
+    {type:'color',label:'Interior color',value:v.interior||'Not listed'},
     {type:'engine',label:'Engine',value:v.engine||'Not listed'},
     {type:'fuel',label:'Fuel type',value:v.fuel||'Not listed'},
     {type:'transmission',label:'Transmission',value:v.trans||'Not listed'},
-    final
+    {type:'title',label:'Title',value:v.title||'Not listed'}
   ];
+  if(v.mpg)items.push({type:'mpg',label:'Combined MPG',value:v.mpg+' MPG'});
   return `<section class="vehicleFeaturePanel glass">
     <h2>Features</h2>
     <div class="vehicleFeatureGrid">
@@ -96,6 +90,32 @@ function vehicleFeaturePanel(v){
       </div>`).join('')}
     </div>
   </section>`;
+}
+
+function vehicleOverview(v){
+  const description=String(v.description||'').trim();
+  if(!description)return 'Vehicle details and history are available from Philly Cars. Contact us to schedule a viewing or test drive.';
+
+  const fullName=`${v.year} ${v.make} ${v.model}`.trim().toLowerCase();
+  const exactSpecs=new Set([
+    v.drive,v.engine,v.trans,v.fuel,v.color,v.interior,v.title,
+    ...(Array.isArray(v.features)?v.features:[])
+  ].filter(Boolean).map(x=>String(x).trim().toLowerCase()));
+
+  const lines=description.split(/\n+/).map(x=>x.trim()).filter(Boolean);
+  const kept=lines.filter(line=>{
+    const lower=line.toLowerCase();
+    if(lower.startsWith(fullName+' –')||lower.startsWith(fullName+' -'))return false;
+    if(exactSpecs.has(lower))return false;
+    if(/^asking\s+\$/i.test(line))return false;
+    if(/^located in philadelphia/i.test(line))return false;
+    if(/^message us to schedule/i.test(line))return false;
+    if(/^\d+(?:\.\d+)?\s*hp$/i.test(line))return false;
+    if(/^\d+(?:st|nd|rd|th)[- ]row seating$/i.test(line))return false;
+    return true;
+  });
+
+  return kept.join('\n\n')||'Contact Philly Cars for full vehicle details and history.';
 }
 function toast(msg){const el=document.createElement('div');el.className='toast';el.textContent=msg;document.getElementById('toast-root').appendChild(el);setTimeout(()=>el.remove(),2200)}
 function icon(n){return {'home':'⌂','car':'▰','heart':'♡','menu':'☰','trade':'↔','sell':'◇','about':'◌','contact':'✉','admin':'⌘'}[n]||'•'}
@@ -116,7 +136,7 @@ function detail(id){
   const v=cars.find(x=>x.id===id);if(!v)return notFound();
   const gallery=(v.images||[]).length?(v.images||[]):[{path:img(v),is_cover:true}];
   const cover=gallery.find(x=>x.is_cover)||gallery[0];
-  return `${header()}<main class="page"><div class="container"><section class="detailHero"><div class="eyebrow">Inventory / ${v.make}</div><h1 style="font-size:clamp(40px,5vw,64px);margin:8px 0 8px">${v.year} ${v.make} ${v.model}</h1><p class="muted">${v.trim} · ${v.drive} · ${miles(v.mileage)} · Stock #${v.stock}</p></section><section class="detailTop"><div><div class="gallery glass"><div id="galleryMain" class="galleryMain" style="background-image:url('${imageUrl(cover.path)||img(v)}')"></div><div class="thumbs">${gallery.map((p,i)=>`<button class="thumb" aria-label="View photo ${i+1}" style="background-image:url('${imageUrl(p.path)||img(v)}')" onclick="setGalleryImage('${imageUrl(p.path)||img(v)}')"></button>`).join('')}</div></div><div class="specStrip">${[['Year',v.year],['Mileage',miles(v.mileage)],['Drivetrain',v.drive],['Transmission',v.trans],['Body Style',v.body]].map(x=>`<div class="spec glass"><small class="muted">${x[0]}</small><b>${x[1]}</b></div>`).join('')}</div>${vehicleFeaturePanel(v)}<div class="detailSections"><div class="detailBox glass"><div class="eyebrow">Overview</div><h2>${v.trim}</h2><p class="muted vehicleDescription">${v.description||'Vehicle information is managed directly from the Philly Cars inventory system so pricing and availability stay consistent.'}</p></div><div class="detailBox glass"><div class="eyebrow">Features</div><h2>Highlights</h2><div class="featureList">${v.features.length?v.features.map(f=>`<div class="featureItem">${f}</div>`).join(''):'<div class="muted">Features coming soon.</div>'}</div></div><div class="detailBox glass"><div class="eyebrow">Vehicle details</div><h2>Specs</h2><p class="muted">Exterior: <b>${v.color||'—'}</b><br>Interior: <b>${v.interior||'—'}</b><br>Engine: <b>${v.engine||'—'}</b><br>Fuel: <b>${v.fuel||'—'}</b><br>Title: <b>${v.title||'—'}</b></p></div><div class="detailBox glass"><div class="eyebrow">Interested?</div><h2>Ask about this vehicle.</h2><p class="muted">Send a quick inquiry and reference stock #${v.stock}.</p><button class="btn blue" onclick="quickInquiry('${v.id}')">Send Inquiry →</button></div></div></div><aside class="stickyCard glass"><span class="pill ${v.status==='Pending'?'pending':v.status==='Coming Soon'?'coming':''}">${v.status}</span><div class="price" style="margin-top:12px">${money(v.price)}</div><p class="muted">${miles(v.mileage)}</p><button class="btn blue" onclick="toast('Dealership phone will be connected before launch')">☎ Call Dealer</button><button class="btn soft" onclick="toast('Dealership SMS will be connected before launch')">Message Us</button><button class="btn soft" onclick="quickInquiry('${v.id}','test-drive')">Schedule Test Drive</button><button class="btn ghost" onclick="toggleSaved('${v.id}',this)">${saved.has(v.id)?'♥ Saved':'♡ Save Vehicle'}</button></aside></section></div></main>${footer()}${mobileBottom()}`
+  return `${header()}<main class="page"><div class="container"><section class="detailHero"><div class="eyebrow">Inventory / ${v.make}</div><h1 style="font-size:clamp(40px,5vw,64px);margin:8px 0 8px">${v.year} ${v.make} ${v.model}</h1><p class="muted">${[v.trim,`Stock #${v.stock}`].filter(Boolean).join(' · ')}</p></section><section class="detailTop"><div><div class="gallery glass"><div id="galleryMain" class="galleryMain" style="background-image:url('${imageUrl(cover.path)||img(v)}')"></div><div class="thumbs">${gallery.map((p,i)=>`<button class="thumb" aria-label="View photo ${i+1}" style="background-image:url('${imageUrl(p.path)||img(v)}')" onclick="setGalleryImage('${imageUrl(p.path)||img(v)}')"></button>`).join('')}</div></div>${vehicleFeaturePanel(v)}<div class="detailSections simplifiedDetails"><div class="detailBox glass"><div class="eyebrow">Overview</div><h2>About this vehicle</h2><p class="muted vehicleDescription">${vehicleOverview(v)}</p></div><div class="detailBox glass"><div class="eyebrow">Equipment</div><h2>Highlights</h2><div class="featureList">${v.features.length?v.features.map(f=>`<div class="featureItem">${f}</div>`).join(''):'<div class="muted">Equipment details coming soon.</div>'}</div></div><div class="detailBox glass"><div class="eyebrow">Interested?</div><h2>Ask about this vehicle.</h2><p class="muted">Reference stock #${v.stock} when you contact us.</p><button class="btn blue" onclick="quickInquiry('${v.id}')">Send Inquiry →</button></div></div></div><aside class="stickyCard glass"><span class="pill ${v.status==='Pending'?'pending':v.status==='Coming Soon'?'coming':''}">${v.status}</span><div class="price" style="margin-top:12px">${money(v.price)}</div><button class="btn blue" onclick="toast('Dealership phone will be connected before launch')">☎ Call Dealer</button><button class="btn soft" onclick="toast('Dealership SMS will be connected before launch')">Message Us</button><button class="btn soft" onclick="quickInquiry('${v.id}','test-drive')">Schedule Test Drive</button><button class="btn ghost" onclick="toggleSaved('${v.id}',this)">${saved.has(v.id)?'♥ Saved':'♡ Save Vehicle'}</button></aside></section></div></main>${footer()}${mobileBottom()}`
 }
 window.setGalleryImage=url=>{const el=document.getElementById('galleryMain');if(el)el.style.backgroundImage=`url('${url}')`}
 window.quickInquiry=(id,type='inquiry')=>{const v=cars.find(x=>x.id===id);openLeadModal(type,`${v.year} ${v.make} ${v.model}`,v.stock)}

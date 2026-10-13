@@ -522,14 +522,44 @@ async function downloadPublicGoogleDriveImage(file) {
   const maxBytes=30*1024*1024;
   const declared=Number(file.size||0);
   if(declared>maxBytes)throw new Error('drive_image_too_large');
-  if(!file.webContentLink)throw new Error('drive_download_link_missing');
 
-  const response=await fetch(file.webContentLink,{
-    redirect:'follow',
-    signal:AbortSignal.timeout(30000),
-    headers:{'User-Agent':'PhillyCars/1.0'}
-  });
-  if(!response.ok)throw new Error('drive_image_download_failed');
+  const apiKey=String(process.env.GOOGLE_DRIVE_API_KEY||'').trim();
+  let response=null;
+
+  if(apiKey&&file.id){
+    const params=new URLSearchParams({
+      alt:'media',
+      supportsAllDrives:'true',
+      key:apiKey
+    });
+    const headers={
+      'User-Agent':'PhillyCars/1.0',
+      Accept:file.mimeType||'image/*'
+    };
+    if(file.resourceKey)headers['X-Goog-Drive-Resource-Keys']=file.id+'/'+file.resourceKey;
+
+    try{
+      response=await fetch(
+        'https://www.googleapis.com/drive/v3/files/'+encodeURIComponent(file.id)+'?'+params.toString(),
+        {
+          redirect:'follow',
+          signal:AbortSignal.timeout(30000),
+          headers
+        }
+      );
+    }catch{}
+  }
+
+  if((!response||!response.ok)&&file.webContentLink){
+    try{await response?.body?.cancel();}catch{}
+    response=await fetch(file.webContentLink,{
+      redirect:'follow',
+      signal:AbortSignal.timeout(30000),
+      headers:{'User-Agent':'PhillyCars/1.0'}
+    });
+  }
+
+  if(!response||!response.ok)throw new Error('drive_image_download_failed');
 
   const contentLength=Number(response.headers.get('content-length')||0);
   if(contentLength>maxBytes)throw new Error('drive_image_too_large');
@@ -537,6 +567,12 @@ async function downloadPublicGoogleDriveImage(file) {
   if(!data.length)throw new Error('drive_image_empty');
   if(data.length>maxBytes)throw new Error('drive_image_too_large');
   return data;
+}
+
+function googleDriveImportConcurrency(){
+  const configured=Number(process.env.DRIVE_IMPORT_CONCURRENCY||3);
+  if(!Number.isFinite(configured))return 3;
+  return Math.max(1,Math.min(4,Math.floor(configured)));
 }
 
 async function nextStockNumber(client) {
@@ -1256,6 +1292,7 @@ app.get('/api/v1/admin/google-drive/status', { preHandler: requireAdmin }, async
 });
 
 app.post('/api/v1/admin/vehicles/:id/images/import-drive', { preHandler: requireAdmin }, async (req, reply) => {
+  const startedAt=Date.now();
   const folderUrl=String(req.body?.folderUrl||'').trim();
   if(!folderUrl)return reply.code(400).send({error:'google_drive_folder_url_required'});
 
@@ -1296,23 +1333,55 @@ app.post('/api/v1/admin/vehicles/:id/images/import-drive', { preHandler: require
   const skipped=[];
   const failed=[];
   const alt=`${vehicle.rows[0].year} ${vehicle.rows[0].make} ${vehicle.rows[0].model}`;
+  const concurrency=googleDriveImportConcurrency();
 
+  const pending=[];
   for(const file of files){
     if(importedIds.has(file.id)){
       skipped.push({id:file.id,name:file.name,reason:'already_imported'});
-      continue;
+    }else{
+      pending.push(file);
     }
-    try{
-      const raw=await downloadPublicGoogleDriveImage(file);
-      const optimized=await sharp(raw,{failOn:'none'})
-        .rotate()
-        .resize({width:1920,height:1920,fit:'inside',withoutEnlargement:true})
-        .webp({quality:82,effort:4,smartSubsample:true})
-        .toBuffer();
+  }
 
+  for(let offset=0;offset<pending.length;offset+=concurrency){
+    const batch=pending.slice(offset,offset+concurrency);
+
+    const processed=await Promise.all(batch.map(async file=>{
+      const itemStartedAt=Date.now();
+      try{
+        const raw=await downloadPublicGoogleDriveImage(file);
+        const optimized=await sharp(raw,{failOn:'none'})
+          .rotate()
+          .resize({width:1920,height:1920,fit:'inside',withoutEnlargement:true})
+          .webp({quality:82,effort:3,smartSubsample:true})
+          .toBuffer();
+
+        return {
+          ok:true,
+          file,
+          optimized,
+          processingMs:Date.now()-itemStartedAt
+        };
+      }catch(err){
+        req.log.warn({err,fileId:file.id,fileName:file.name},'Google Drive vehicle image import failed');
+        return {
+          ok:false,
+          file,
+          reason:String(err?.message||'import_failed')
+        };
+      }
+    }));
+
+    const successful=processed.filter(x=>x.ok);
+    const batchSortStart=nextSort;
+
+    const insertResults=await Promise.all(successful.map(async(item,index)=>{
       const imageId=crypto.randomUUID();
       const path='/api/v1/vehicle-images/'+imageId;
-      const isCover=!coverAvailable;
+      const isCover=!coverAvailable&&index===0;
+      const sortOrder=batchSortStart+index;
+
       const inserted=await pool.query(`
         INSERT INTO vehicle_images(
           id,vehicle_id,path,alt_text,sort_order,is_cover,content_type,original_name,size_bytes,image_data,
@@ -1322,22 +1391,39 @@ app.post('/api/v1/admin/vehicles/:id/images/import-drive', { preHandler: require
         ON CONFLICT DO NOTHING
         RETURNING id,path,alt_text,sort_order,is_cover,content_type,original_name,size_bytes,created_at
       `,[
-        imageId,req.params.id,path,alt,nextSort,isCover,file.name||null,optimized.length,optimized,
-        file.id,file.webContentLink||null
+        imageId,req.params.id,path,alt,sortOrder,isCover,item.file.name||null,item.optimized.length,item.optimized,
+        item.file.id,item.file.webContentLink||null
       ]);
 
-      if(!inserted.rowCount){
-        skipped.push({id:file.id,name:file.name,reason:'already_imported'});
-        continue;
+      return {
+        item,
+        row:inserted.rows[0]||null
+      };
+    }));
+
+    for(const result of insertResults){
+      if(result.row){
+        imported.push(result.row);
+        importedIds.add(result.item.file.id);
+      }else{
+        skipped.push({
+          id:result.item.file.id,
+          name:result.item.file.name,
+          reason:'already_imported'
+        });
       }
-      imported.push(inserted.rows[0]);
-      importedIds.add(file.id);
-      nextSort++;
-      coverAvailable=true;
-    }catch(err){
-      req.log.warn({err,fileId:file.id,fileName:file.name},'Google Drive vehicle image import failed');
-      failed.push({id:file.id,name:file.name,reason:String(err?.message||'import_failed')});
     }
+
+    for(const item of processed.filter(x=>!x.ok)){
+      failed.push({
+        id:item.file.id,
+        name:item.file.name,
+        reason:item.reason
+      });
+    }
+
+    nextSort+=successful.length;
+    if(insertResults.some(x=>x.row))coverAvailable=true;
   }
 
   await pool.query(
@@ -1345,18 +1431,30 @@ app.post('/api/v1/admin/vehicles/:id/images/import-drive', { preHandler: require
     [folderUrl,req.params.id]
   );
 
+  const elapsedMs=Date.now()-startedAt;
+  req.log.info({
+    vehicleId:req.params.id,
+    found:files.length,
+    imported:imported.length,
+    skipped:skipped.length,
+    failed:failed.length,
+    concurrency,
+    elapsedMs
+  },'Google Drive vehicle image import completed');
+
   return {
     ok:true,
     found:files.length,
     importedCount:imported.length,
     skippedCount:skipped.length,
     failedCount:failed.length,
+    concurrency,
+    elapsedMs,
     imported,
     skipped,
     failed
   };
 });
-
 app.post('/api/v1/admin/vehicles/:id/images', { preHandler: requireAdmin }, async (req, reply) => {
   const vehicle = await pool.query('SELECT id,year,make,model FROM vehicles WHERE id=$1', [req.params.id]);
   if (!vehicle.rowCount) return reply.code(404).send({ error: 'vehicle_not_found' });

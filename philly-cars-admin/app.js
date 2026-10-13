@@ -700,7 +700,7 @@ window.importDrivePhotos=async vehicleId=>{
   if(!folderUrl){toast('Paste a Google Drive folder link');return}
   button.disabled=true;
   button.textContent='Importing…';
-  if(status)status.textContent='Reading Google Drive folder and optimizing photos…';
+  if(status)status.textContent='Reading Google Drive folder and processing photos in parallel…';
   try{
     const result=await apiFetch('/api/v1/admin/vehicles/'+vehicleId+'/images/import-drive',{
       method:'POST',
@@ -708,7 +708,7 @@ window.importDrivePhotos=async vehicleId=>{
     });
     await refreshVehiclePhotos(vehicleId);
     if(status){
-      status.textContent=`Found ${result.found}. Imported ${result.importedCount}, skipped ${result.skippedCount}, failed ${result.failedCount}.`;
+      const seconds=((result.elapsedMs||0)/1000).toFixed(1);status.textContent=`Found ${result.found}. Imported ${result.importedCount}, skipped ${result.skippedCount}, failed ${result.failedCount} · ${seconds}s · ${result.concurrency||1} parallel.`;
     }
     toast(result.importedCount
       ?`Imported ${result.importedCount} photo${result.importedCount===1?'':'s'} from Google Drive`
@@ -718,6 +718,9 @@ window.importDrivePhotos=async vehicleId=>{
   }catch(err){
     const messages={
       google_drive_not_configured:'Google Drive integration is not configured on the server yet',
+      google_drive_api_key_invalid:'Google Drive API key is invalid',
+      google_drive_api_disabled:'Google Drive API is not enabled for this key/project',
+      google_drive_api_key_restricted:'Google Drive API key restrictions are blocking the server',
       invalid_google_drive_folder_url:'Paste a valid Google Drive folder URL',
       google_drive_folder_not_public:'Folder is not public. Set sharing to “Anyone with the link”',
       google_drive_no_images:'No image files found in this Drive folder',

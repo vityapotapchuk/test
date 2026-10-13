@@ -30,7 +30,7 @@ await app.register(cors, {
   },
   credentials: true,
   methods: ['GET','POST','PATCH','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type']
+  allowedHeaders: ['Content-Type','Authorization']
 });
 
 const hashToken = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -190,19 +190,24 @@ async function bootstrapAdmin() {
   const extraRole = process.env.ADMIN_EXTRA_ROLE === 'owner' ? 'owner' : 'manager';
   if (extraEmail && extraPassword) {
     const hash = await bcrypt.hash(extraPassword, 12);
-    await pool.query(`
+    const normalizedEmail=String(extraEmail).trim().toLowerCase();
+    const provisioned=await pool.query(`
       INSERT INTO admin_users(email,password_hash,role,active)
       VALUES($1,$2,$3,true)
       ON CONFLICT (email)
       DO UPDATE SET password_hash=EXCLUDED.password_hash, role=EXCLUDED.role, active=true
-    `, [String(extraEmail).trim().toLowerCase(), hash, extraRole]);
-    app.log.info({ email: String(extraEmail).trim().toLowerCase(), role: extraRole }, 'Extra admin account provisioned');
+      RETURNING id
+    `, [normalizedEmail, hash, extraRole]);
+    await pool.query('DELETE FROM admin_sessions WHERE user_id=$1', [provisioned.rows[0].id]);
+    app.log.info({ email: normalizedEmail, role: extraRole }, 'Extra admin account provisioned');
   }
 }
 
 async function requireAdmin(req, reply) {
   if (!pool) return reply.code(503).send({ error: 'database_not_connected' });
-  const raw = req.cookies[COOKIE];
+  const auth = String(req.headers.authorization || '');
+  const bearer = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
+  const raw = bearer || req.cookies[COOKIE];
   if (!raw) return reply.code(401).send({ error: 'unauthorized' });
   const result = await pool.query(`
     SELECT u.id, u.email, u.role
@@ -211,6 +216,7 @@ async function requireAdmin(req, reply) {
   `, [hashToken(raw)]);
   if (!result.rowCount) return reply.code(401).send({ error: 'unauthorized' });
   req.admin = result.rows[0];
+  req.adminSessionToken = raw;
 }
 
 app.get('/', async () => ({ ok: true, service: 'philly-cars-api', health: '/health' }));
@@ -320,14 +326,18 @@ app.post('/api/v1/admin/session', async (req, reply) => {
   await pool.query('INSERT INTO admin_sessions(user_id,token_hash,expires_at) VALUES($1,$2,$3)', [result.rows[0].id, hashToken(raw), expires]);
   reply.setCookie(COOKIE, raw, { httpOnly: true, secure: true, sameSite: 'none', path: '/', expires });
   await pool.query('UPDATE admin_users SET last_login_at=now() WHERE id=$1', [result.rows[0].id]);
-  return { user: { email: result.rows[0].email, role: result.rows[0].role } };
+  return {
+    user: { email: result.rows[0].email, role: result.rows[0].role },
+    sessionToken: raw,
+    expiresAt: expires.toISOString()
+  };
 });
 
 app.get('/api/v1/admin/me', { preHandler: requireAdmin }, async req => ({ user: req.admin }));
 
 app.delete('/api/v1/admin/session', { preHandler: requireAdmin }, async (req, reply) => {
-  const raw = req.cookies[COOKIE];
-  await pool.query('DELETE FROM admin_sessions WHERE token_hash=$1', [hashToken(raw)]);
+  const raw = req.adminSessionToken || req.cookies[COOKIE];
+  if (raw) await pool.query('DELETE FROM admin_sessions WHERE token_hash=$1', [hashToken(raw)]);
   reply.clearCookie(COOKIE, { path: '/' });
   return { ok: true };
 });

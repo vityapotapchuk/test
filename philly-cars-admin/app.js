@@ -152,7 +152,54 @@ window.logout=async()=>{
   sessionStorage.removeItem('phillyAdminToken');sessionStorage.removeItem('phillyAdminApiSession');sessionStorage.removeItem('phillyAdminSession');location.hash='/';render()
 }
 function sidebar(active='inventory'){return `<aside class="adminSide"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="eyebrow" style="margin:24px 0 8px">Dealer OS</div><nav class="adminMenu"><a class="${active==='dashboard'?'active':''}" href="#/dashboard"><span>⌂</span> Dashboard</a><a class="${active==='inventory'?'active':''}" href="#/inventory"><span>▰</span> Inventory</a><a class="${active==='distribution'?'active':''}" href="#/distribution"><span>⇄</span> Distribution</a><a class="${active==='leads'?'active':''}" href="#/leads"><span>◎</span> Leads</a><a class="${active==='settings'?'active':''}" href="#/settings"><span>⚙</span> Settings</a></nav><div style="margin-top:auto"><div class="adminBadge" style="margin-bottom:10px;text-align:center">${isApiSession()?'API + DB':'Local dev'}</div><button class="btn soft" style="width:100%" onclick="logout()">Sign Out</button></div></aside>`}
-function mobileBar(){return `<div class="adminMobileBar"><div class="brand"><span class="logo"></span>Philly Cars</div><div class="actions"><button class="smallBtn" onclick="location.hash='/inventory'">Inventory</button><button class="smallBtn" onclick="location.hash='/distribution'">Distribution</button></div></div>`}
+function mobileBar(){
+  const current=(location.hash||'#/inventory').replace('#/','').split('?')[0]||'inventory';
+  const item=(key,label,icon)=>`<a class="${current===key?'active':''}" href="#/${key}" onclick="closeMobileMenu()"><span>${icon}</span><b>${label}</b></a>`;
+  return `<div class="adminMobileBar">
+    <div class="brand"><span class="logo"></span>Philly Cars</div>
+    <button class="mobileMenuButton" type="button" aria-label="Open menu" aria-expanded="false" onclick="toggleMobileMenu()">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+  <div class="mobileMenuBackdrop" id="mobileMenuBackdrop" onclick="closeMobileMenu()"></div>
+  <aside class="mobileMenuDrawer" id="mobileMenuDrawer" aria-hidden="true">
+    <div class="mobileMenuHead">
+      <div class="brand"><span class="logo"></span>Philly Cars</div>
+      <button class="mobileMenuClose" type="button" aria-label="Close menu" onclick="closeMobileMenu()">✕</button>
+    </div>
+    <div class="eyebrow">Dealer OS</div>
+    <nav class="mobileMenuNav">
+      ${item('dashboard','Dashboard','⌂')}
+      ${item('inventory','Inventory','▰')}
+      ${item('distribution','Distribution','⇄')}
+      ${item('leads','Leads','◎')}
+      ${item('settings','Settings','⚙')}
+    </nav>
+    <div class="mobileMenuFooter">
+      <div class="adminBadge">${isApiSession()?'API + DB':'Local dev'}</div>
+      <button class="btn soft full" type="button" onclick="closeMobileMenu();logout()">Sign Out</button>
+    </div>
+  </aside>`;
+}
+window.toggleMobileMenu=()=>{
+  const drawer=document.getElementById('mobileMenuDrawer');
+  const backdrop=document.getElementById('mobileMenuBackdrop');
+  const button=document.querySelector('.mobileMenuButton');
+  if(!drawer||!backdrop)return;
+  const open=!drawer.classList.contains('open');
+  drawer.classList.toggle('open',open);
+  backdrop.classList.toggle('open',open);
+  drawer.setAttribute('aria-hidden',open?'false':'true');
+  button?.setAttribute('aria-expanded',open?'true':'false');
+  document.body.classList.toggle('mobileMenuOpen',open);
+};
+window.closeMobileMenu=()=>{
+  document.getElementById('mobileMenuDrawer')?.classList.remove('open');
+  document.getElementById('mobileMenuBackdrop')?.classList.remove('open');
+  document.getElementById('mobileMenuDrawer')?.setAttribute('aria-hidden','true');
+  document.querySelector('.mobileMenuButton')?.setAttribute('aria-expanded','false');
+  document.body.classList.remove('mobileMenuOpen');
+};
 function dashboard(){
   const active=cars.filter(v=>!['Sold','Archived'].includes(v.status));
   const inventoryValue=active.reduce((n,v)=>n+(+v.price||0),0);

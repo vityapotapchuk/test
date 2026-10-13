@@ -247,7 +247,32 @@ window.submitLead=async(e,kind)=>{
 function about(){return `${header()}<main class="page"><div class="container"><section class="pageHero"><div class="eyebrow">About Philly Cars</div><h1>A Philadelphia dealership <span class="accent">built for drivers.</span></h1><p class="muted">A cleaner, more transparent way to browse and buy pre-owned vehicles.</p></section><section class="split"><div class="visual"></div><div><div class="eyebrow">Our story</div><h2>Browse vehicles with confidence.</h2><p class="muted">Philly Cars helps drivers explore available pre-owned vehicles in Philadelphia. Browse current inventory, review vehicle photos and specifications, and send an inquiry about a car that interests you.</p></div></section><section class="section"><div class="why"><div><div class="eyebrow">Our values</div><h2>People first. Always.</h2></div>${[['◎','Integrity'],['☆','Quality Vehicles'],['♡','Local & Trusted']].map(x=>`<div class="glass"><div class="iconBubble">${x[0]}</div><h3>${x[1]}</h3><p class="muted">Built into the experience from inventory to contact.</p></div>`).join('')}</div></section></div></main>${footer()}${mobileBottom()}`}
 function contact(){return `${header()}<main class="page"><div class="container"><section class="pageHero"><div class="eyebrow">Get in touch</div><h1>Contact <span class="accent">Philly Cars.</span></h1><p class="muted">Questions, test drives, trade-ins, or general inquiries? Send us a message and include the vehicle stock number if applicable.</p></section><section class="formCard glass"><div class="eyebrow">Send a message</div><h2>Ask our team</h2><form onsubmit="submitLead(event,'contact')"><div class="formGrid"><div class="field"><label>Name</label><input class="fieldInput" name="name" autocomplete="name" required></div><div class="field"><label>Phone</label><input class="fieldInput" name="phone" type="tel" autocomplete="tel"></div><div class="field full"><label>Email</label><input class="fieldInput" name="email" type="email" autocomplete="email"></div><div class="field full"><label>Message</label><textarea class="fieldInput" name="notes" required></textarea></div><button class="btn blue full">Send Message →</button></div></form></section></div></main>${footer()}${mobileBottom()}`}
 function savedPage(){const list=cars.filter(x=>saved.has(x.id));return `${header()}<main class="page"><div class="container"><section class="pageHero"><div class="eyebrow">Saved vehicles</div><h1>Your shortlist.</h1><p class="muted">Vehicles you saved on this device.</p></section><div class="vehicleGrid">${list.length?list.map(carCard).join(''):`<div class="empty glass"><h3>No saved vehicles yet</h3><p class="muted">Tap the heart on any vehicle to save it here.</p><a class="btn blue" href="#/inventory">Browse Inventory →</a></div>`}</div></div></main>${footer()}${mobileBottom()}`}
-window.openLeadModal=(kind,vehicle,stock)=>document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="leadModal"><form class="modalCard" style="max-width:560px" onsubmit="submitModalLead(event,'${kind}','${vehicle}','${stock}')"><div class="modalHead"><div><div class="eyebrow">${stock}</div><h2>${kind==='test-drive'?'Schedule Test Drive':'Vehicle Inquiry'}</h2></div><button class="smallBtn" type="button" onclick="leadModal.remove()">✕</button></div><p class="muted">${vehicle}</p><div class="formGrid"><div class="field full"><label>Name</label><input class="fieldInput" name="name" required></div><div class="field"><label>Phone</label><input class="fieldInput" name="phone" type="tel" autocomplete="tel"></div><div class="field"><label>Email</label><input class="fieldInput" name="email" type="email"></div><div class="field full"><label>Message</label><textarea class="fieldInput" name="notes"></textarea></div><button class="btn blue full">Send Request →</button></div></form></div>`)
+window.closeLeadModal=()=>{
+  const modal=document.getElementById('leadModal');
+  if(!modal)return;
+  if(modal.querySelector('form')?.dataset.submitting==='true')return;
+  modal.remove();
+  document.body.style.overflow='';
+  window.leadModalTrigger?.focus?.();
+};
+window.openLeadModal=(kind,vehicle,stock)=>{
+  closeLeadModal();
+  window.leadModalTrigger=document.activeElement;
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="leadModal" role="dialog" aria-modal="true" aria-labelledby="leadModalTitle" onclick="if(event.target===this)closeLeadModal()"><form class="modalCard" style="max-width:560px" onsubmit="submitModalLead(event,'${kind}','${vehicle}','${stock}')"><div class="modalHead"><div><div class="eyebrow">${stock}</div><h2 id="leadModalTitle">${kind==='test-drive'?'Schedule Test Drive':'Vehicle Inquiry'}</h2></div><button class="smallBtn" type="button" aria-label="Close dialog" onclick="closeLeadModal()">✕</button></div><p class="muted">${vehicle}</p><div class="formGrid"><div class="field full"><label>Name</label><input class="fieldInput" name="name" autocomplete="name" required></div><div class="field"><label>Phone</label><input class="fieldInput" name="phone" type="tel" autocomplete="tel"></div><div class="field"><label>Email</label><input class="fieldInput" name="email" type="email" autocomplete="email"></div><div class="field full"><label>Message</label><textarea class="fieldInput" name="notes"></textarea></div><button class="btn blue full">Send Request →</button></div></form></div>`);
+  document.body.style.overflow='hidden';
+  document.querySelector('#leadModal [name="name"]')?.focus();
+};
+window.addEventListener('keydown',e=>{
+  const modal=document.getElementById('leadModal');
+  if(!modal)return;
+  if(e.key==='Escape'){e.preventDefault();closeLeadModal();return}
+  if(e.key!=='Tab')return;
+  const nodes=[...modal.querySelectorAll('button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),a[href]')];
+  if(!nodes.length)return;
+  const first=nodes[0],last=nodes[nodes.length-1];
+  if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}
+  else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}
+});
 window.submitModalLead=async(e,kind,vehicle,stock)=>{
   e.preventDefault();
   const form=e.target;
@@ -263,6 +288,7 @@ window.submitModalLead=async(e,kind,vehicle,stock)=>{
       message:data.notes||null,payload:{vehicle,stock,...data}
     })});
     document.getElementById('leadModal')?.remove();
+    document.body.style.overflow='';
     toast('Request received. Philly Cars will follow up shortly.');
   }catch(err){toast('Could not send request. Please try again.')}
   finally{form.dataset.submitting='false';if(button)button.disabled=false}

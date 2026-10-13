@@ -62,6 +62,47 @@ async function getDistributionInventory() {
 
 const VIN_PATTERN = /\b[A-HJ-NPR-Z0-9]{17}\b/g;
 
+function normalizeTransmissionLabel(value='',speeds=null) {
+  let raw=String(value||'').replace(/\s+/g,' ').trim();
+  if(!raw)return '';
+
+  raw=raw
+    .replace(/\bcontinuously variable transmission\b/i,'CVT')
+    .replace(/\bdual[- ]clutch transmission\b/i,'Dual-Clutch')
+    .replace(/\bdual[- ]clutch\b/i,'Dual-Clutch')
+    .replace(/\bautomated manual transmission(?:\s*\(AMT\))?\b/i,'Automated Manual')
+    .replace(/\bmanual\/standard\b/i,'Manual')
+    .replace(/\s+transmission$/i,'')
+    .trim();
+
+  const speedCount=Number(speeds)||null;
+  if(speedCount && !/\b\d{1,2}\s*[- ]?speed\b/i.test(raw) && !/\b(?:CVT|eCVT|single[- ]?speed)\b/i.test(raw)){
+    raw=speedCount+'-Speed '+raw;
+  }
+
+  return raw
+    .replace(/\b(\d{1,2})\s+speed\b/gi,'$1-Speed')
+    .replace(/\b(\d{1,2})-speed\b/gi,'$1-Speed')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function parseCarfaxTransmission(text='') {
+  const source=String(text||'').replace(/\u00a0/g,' ').replace(/\r/g,'');
+  const labeledPatterns=[
+    /(?:^|\n)\s*transmission\s*[:\-]?\s*((?:\d{1,2}\s*[- ]?speed\s+)?(?:automatic|manual|dual[- ]clutch|dct|dsg|pdk|tiptronic|cvt|ecvt|continuously variable|single[- ]speed)(?:\s+transmission)?)[ \t]*(?:\n|$)/im,
+    /\btransmission\s*[:\-]\s*((?:\d{1,2}\s*[- ]?speed\s+)?(?:automatic|manual|dual[- ]clutch|dct|dsg|pdk|tiptronic|cvt|ecvt|continuously variable|single[- ]speed)(?:\s+transmission)?)/i
+  ];
+  for(const re of labeledPatterns){
+    const m=source.match(re);
+    if(m?.[1])return normalizeTransmissionLabel(m[1]);
+  }
+
+  const specPattern=/\b(\d{1,2}\s*[- ]?speed\s+(?:automatic|manual|dual[- ]clutch|dct|dsg|pdk|tiptronic)|(?:e?cvt|continuously variable transmission)|single[- ]speed(?:\s+automatic)?)\b/i;
+  const spec=source.match(specPattern);
+  return spec?.[1]?normalizeTransmissionLabel(spec[1]):'';
+}
+
 function parseCarfaxText(rawText='') {
   const text=String(rawText||'').replace(/\u00a0/g,' ').replace(/\r/g,'');
   const upper=text.toUpperCase();
@@ -117,6 +158,7 @@ function parseCarfaxText(rawText='') {
   const reportDateMatch=
     text.match(/\breport date\s*[:\-]?\s*([A-Za-z]+\s+\d{1,2},\s+\d{4})/i) ||
     text.match(/\breport date\s*[:\-]?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+  const transmission=parseCarfaxTransmission(text);
 
   return {
     vin,
@@ -129,6 +171,7 @@ function parseCarfaxText(rawText='') {
     titleStatus,
     titleBrands,
     usage,
+    transmission:transmission||null,
     reportDate:reportDateMatch?reportDateMatch[1]:null,
     textLength:text.length
   };
@@ -173,7 +216,8 @@ async function decodeVinForImport(vin) {
     bodyStyle,
     bodyClass:bodyRaw,
     drivetrain,
-    transmission:r.TransmissionStyle||'',
+    transmission:normalizeTransmissionLabel(r.TransmissionStyle||'',Number(r.TransmissionSpeeds)||null),
+    transmissionStyle:r.TransmissionStyle||'',
     transmissionSpeeds:Number(r.TransmissionSpeeds)||null,
     engine,
     engineCylinders:Number(r.EngineCylinders)||null,
@@ -364,7 +408,7 @@ function buildVehicleDescription(vehicle,{carfaxSummary=null,vinDecode=null,reca
 async function generateAndPersistVehicleDescription(vehicleId,{knownCarfax=null,knownVinDecode=null}={}) {
   const vehicleResult=await pool.query('SELECT * FROM vehicles WHERE id=$1',[vehicleId]);
   if(!vehicleResult.rowCount)throw new Error('vehicle_not_found');
-  const vehicle=vehicleResult.rows[0];
+  let vehicle=vehicleResult.rows[0];
 
   let carfaxSummary=knownCarfax;
   let vinDecode=knownVinDecode;
@@ -388,6 +432,17 @@ async function generateAndPersistVehicleDescription(vehicleId,{knownCarfax=null,
   if(!vinDecode && vehicle.vin){
     try{vinDecode=await decodeVinForImport(vehicle.vin);}
     catch(err){app.log.warn({err,vehicleId,vin:vehicle.vin},'Description VIN enrichment unavailable');}
+  }
+
+  const detailedTransmission=carfaxSummary?.transmission||vinDecode?.transmission||'';
+  const currentTransmission=String(vehicle.transmission||'').trim();
+  const currentIsGeneric=/^(automatic|manual)$/i.test(currentTransmission);
+  if(detailedTransmission && (!currentTransmission||currentIsGeneric) && detailedTransmission.toLowerCase()!==currentTransmission.toLowerCase()){
+    const transmissionUpdate=await pool.query(
+      'UPDATE vehicles SET transmission=$1,updated_at=now() WHERE id=$2 RETURNING *',
+      [detailedTransmission,vehicleId]
+    );
+    if(transmissionUpdate.rowCount)vehicle=transmissionUpdate.rows[0];
   }
 
   let recalls=null;
@@ -1098,7 +1153,7 @@ app.post('/api/v1/admin/import/carfax', { preHandler: requireAdmin }, async (req
     const descriptionSeed={
       year:decoded.year,make:decoded.make,model:decoded.model,trim:decoded.trim||null,
       mileage:summary.mileage||0,body_style:decoded.bodyStyle||null,drivetrain:decoded.drivetrain||null,
-      transmission:decoded.transmission||null,engine:decoded.engine||null,fuel_type:decoded.fuelType||null,
+      transmission:summary.transmission||decoded.transmission||null,engine:decoded.engine||null,fuel_type:decoded.fuelType||null,
       title_status:titleStatus,stock_number:stockNumber,vin:summary.vin
     };
     const generatedDescription=buildVehicleDescription(descriptionSeed,{
@@ -1119,7 +1174,7 @@ app.post('/api/v1/admin/import/carfax', { preHandler: requireAdmin }, async (req
     `,[
       slug,stockNumber,summary.vin,decoded.year,decoded.make,decoded.model,decoded.trim||null,
       summary.mileage||0,acquiredAt,decoded.bodyStyle||null,decoded.drivetrain||null,
-      decoded.transmission||null,decoded.engine||null,decoded.fuelType||null,titleStatus,
+      summary.transmission||decoded.transmission||null,decoded.engine||null,decoded.fuelType||null,titleStatus,
       generatedDescription,descriptionGeneratedAt
     ]);
     let vehicle=vehicleResult.rows[0];

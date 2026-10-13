@@ -45,14 +45,14 @@ function apiToUiVehicle(v){return normalizeVehicle({
   trans:v.transmission||'',engine:v.engine||'',fuel:v.fuel_type||'Gasoline',status:API_TO_UI_STATUS[v.status]||'Acquired',
   image:'car1.jpg',stock:v.stock_number||'',vin:v.vin||'',title:v.title_status||'Clean Title',
   purchasePrice:v.purchase_price||0,auctionFees:v.auction_fees||0,transportCost:v.transport_cost||0,reconCost:v.recon_cost||0,otherCost:v.other_cost||0,
-  acquiredAt:v.acquired_at?String(v.acquired_at).slice(0,10):'',features:Array.isArray(v.features)?v.features:[],images:Array.isArray(v.images)?v.images:[],carfax:v.carfax||null
+  acquiredAt:v.acquired_at?String(v.acquired_at).slice(0,10):'',features:Array.isArray(v.features)?v.features:[],images:Array.isArray(v.images)?v.images:[],carfax:v.carfax||null,photoSourceUrl:v.photo_source_url||''
 })}
 function uiToApiVehicle(v){return {
   stockNumber:v.stock,vin:v.vin||null,year:+v.year,make:v.make,model:v.model,trim:v.trim||null,price:+v.price||0,mileage:+v.mileage||0,
   purchasePrice:+v.purchasePrice||0,auctionFees:+v.auctionFees||0,transportCost:+v.transportCost||0,reconCost:+v.reconCost||0,otherCost:+v.otherCost||0,
   acquiredAt:v.acquiredAt||null,bodyStyle:v.body||null,exteriorColor:v.color||null,interiorColor:v.interior||null,drivetrain:v.drive||null,
   transmission:v.trans||null,engine:v.engine||null,fuelType:v.fuel||'Gasoline',titleStatus:v.title||null,status:UI_TO_API_STATUS[v.status]||'acquired',
-  description:v.description||null,features:v.features||[]
+  description:v.description||null,features:v.features||[],photoSourceUrl:v.photoSourceUrl||null
 }}
 async function loadCarsFromApi(){
   if(!isApiSession()) return false;
@@ -389,7 +389,21 @@ window.importCarfax=async e=>{
   }
 };
 
-window.openVehicleModal=(id='')=>{const v=normalizeVehicle(cars.find(x=>x.id===id)||{year:new Date().getFullYear(),make:'',model:'',trim:'',mileage:0,price:0,body:'SUV',color:'Black',interior:'Black',drive:'AWD',trans:'Automatic',engine:'',fuel:'Gasoline',status:'Acquired',stock:'PC'+String(1060+cars.length),title:'Clean Title',features:[]});document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="vehicleModal"><form class="modalCard" onsubmit="saveVehicle(event,'${id}')"><div class="modalHead"><div><div class="eyebrow">Master vehicle record</div><h2>${id?'Edit Vehicle':'Add Vehicle'}</h2></div><button type="button" class="smallBtn" onclick="vehicleModal.remove()">✕</button></div><div class="subhead">Vehicle identity</div><div class="formGrid">${[['year','Year',v.year],['make','Make',v.make],['model','Model',v.model],['trim','Trim',v.trim],['stock','Stock Number',v.stock],['vin','VIN',v.vin],['price','Retail Price',v.price],['mileage','Mileage',v.mileage],['engine','Engine',v.engine],['color','Exterior Color',v.color],['interior','Interior Color',v.interior],['acquiredAt','Acquired Date',v.acquiredAt]].map(([n,l,val])=>`<div class="field"><label>${l}</label><input class="fieldInput" name="${n}" value="${val??''}" ${['make','model','price','stock'].includes(n)?'required':''} ${n==='vin'?'maxlength="17"':''} ${n==='acquiredAt'?'type="date"':''}></div>`).join('')}<div class="field"><label>Body Style</label><select class="fieldInput" name="body">${['SUV','Sedan','Coupe','Truck','Hatchback','EV','Wagon','Convertible'].map(x=>`<option ${v.body===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Drivetrain</label><select class="fieldInput" name="drive">${['AWD','RWD','FWD','4WD'].map(x=>`<option ${v.drive===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Title Status</label><select class="fieldInput" name="title">${['Clean Title','Rebuilt Title','Salvage Title','Other'].map(x=>`<option ${v.title===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>VIN Decoder</label><button type="button" class="btn soft" id="decodeVinBtn" onclick="decodeVehicleVin()">Decode VIN →</button></div><div class="field"><label>Workflow Status</label><select class="fieldInput" name="status">${ALL_STATUSES.map(x=>`<option ${v.status===x?'selected':''}>${x}</option>`).join('')}</select></div></div>${id?carfaxSummaryHtml(v):''}<div class="subhead">Cost & margin</div><div class="formGrid">${[['purchasePrice','Purchase Price',v.purchasePrice],['auctionFees','Auction / Buyer Fees',v.auctionFees],['transportCost','Transport',v.transportCost],['reconCost','Reconditioning',v.reconCost],['otherCost','Other Cost',v.otherCost]].map(([n,l,val])=>`<div class="field"><label>${l}</label><input class="fieldInput" name="${n}" inputmode="numeric" value="${val||0}"></div>`).join('')}<div class="field marginPreview"><label>Current Gross</label><div class="fieldValue">${money(gross(v))}</div></div><div class="field full"><label>Features (comma separated)</label><input class="fieldInput" name="features" value="${(v.features||[]).join(', ')}"></div><div class="field full"><label>Vehicle Photos</label><div class="photoDrop"><input id="vehiclePhotos" name="photos" type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple onchange="previewPendingPhotos(event)"><div class="muted">JPG, PNG, WebP or AVIF · up to 20 MB each. Photos are automatically resized and compressed for web. The first uploaded photo becomes cover automatically.</div><div id="pendingPhotoList" class="pendingPhotoList"></div><div id="existingPhotoGrid" class="photoManager">${id?photoManagerHtml(v):'<div class="photoEmpty muted">Save the vehicle to attach photos.</div>'}</div></div></div><button class="btn blue full">${id?'Save Changes':'Create Vehicle'} →</button></div></form></div>`)}
+window.openVehicleModal=(id='')=>{const v=normalizeVehicle(cars.find(x=>x.id===id)||{year:new Date().getFullYear(),make:'',model:'',trim:'',mileage:0,price:0,body:'SUV',color:'Black',interior:'Black',drive:'AWD',trans:'Automatic',engine:'',fuel:'Gasoline',status:'Acquired',stock:'PC'+String(1060+cars.length),title:'Clean Title',features:[]});document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="vehicleModal"><form class="modalCard" onsubmit="saveVehicle(event,'${id}')"><div class="modalHead"><div><div class="eyebrow">Master vehicle record</div><h2>${id?'Edit Vehicle':'Add Vehicle'}</h2></div><button type="button" class="smallBtn" onclick="vehicleModal.remove()">✕</button></div><div class="subhead">Vehicle identity</div><div class="formGrid">${[['year','Year',v.year],['make','Make',v.make],['model','Model',v.model],['trim','Trim',v.trim],['stock','Stock Number',v.stock],['vin','VIN',v.vin],['price','Retail Price',v.price],['mileage','Mileage',v.mileage],['engine','Engine',v.engine],['color','Exterior Color',v.color],['interior','Interior Color',v.interior],['acquiredAt','Acquired Date',v.acquiredAt]].map(([n,l,val])=>`<div class="field"><label>${l}</label><input class="fieldInput" name="${n}" value="${val??''}" ${['make','model','price','stock'].includes(n)?'required':''} ${n==='vin'?'maxlength="17"':''} ${n==='acquiredAt'?'type="date"':''}></div>`).join('')}<div class="field"><label>Body Style</label><select class="fieldInput" name="body">${['SUV','Sedan','Coupe','Truck','Hatchback','EV','Wagon','Convertible'].map(x=>`<option ${v.body===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Drivetrain</label><select class="fieldInput" name="drive">${['AWD','RWD','FWD','4WD'].map(x=>`<option ${v.drive===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Title Status</label><select class="fieldInput" name="title">${['Clean Title','Rebuilt Title','Salvage Title','Other'].map(x=>`<option ${v.title===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>VIN Decoder</label><button type="button" class="btn soft" id="decodeVinBtn" onclick="decodeVehicleVin()">Decode VIN →</button></div><div class="field"><label>Workflow Status</label><select class="fieldInput" name="status">${ALL_STATUSES.map(x=>`<option ${v.status===x?'selected':''}>${x}</option>`).join('')}</select></div></div>${id?carfaxSummaryHtml(v):''}<div class="subhead">Cost & margin</div><div class="formGrid">${[['purchasePrice','Purchase Price',v.purchasePrice],['auctionFees','Auction / Buyer Fees',v.auctionFees],['transportCost','Transport',v.transportCost],['reconCost','Reconditioning',v.reconCost],['otherCost','Other Cost',v.otherCost]].map(([n,l,val])=>`<div class="field"><label>${l}</label><input class="fieldInput" name="${n}" inputmode="numeric" value="${val||0}"></div>`).join('')}<div class="field marginPreview"><label>Current Gross</label><div class="fieldValue">${money(gross(v))}</div></div><div class="field full"><label>Features (comma separated)</label><input class="fieldInput" name="features" value="${(v.features||[]).join(', ')}"></div><div class="field full"><label>Vehicle Photos</label><div class="photoDrop">
+  <div class="photoSourceBlock">
+    <div class="photoSourceTitle"><b>Google Drive folder</b><span class="muted">Import every image from one shared folder</span></div>
+    <div class="driveImportRow">
+      <input id="driveFolderUrl" class="fieldInput" name="photoSourceUrl" type="url" inputmode="url" placeholder="https://drive.google.com/drive/folders/..." value="${esc(v.photoSourceUrl||'')}" ${id?'':'disabled'}>
+      <button type="button" id="driveImportBtn" class="btn soft" onclick="importDrivePhotos('${id}')" ${id?'':'disabled'}>Import from Drive</button>
+    </div>
+    <div id="driveImportStatus" class="muted">${id?'Folder must be shared as “Anyone with the link”. Re-import later to add new photos; existing Drive photos are skipped.':'Save the vehicle first, then add the Drive folder link.'}</div>
+  </div>
+  <div class="photoSourceDivider"><span>or upload files</span></div>
+  <input id="vehiclePhotos" name="photos" type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple onchange="previewPendingPhotos(event)">
+  <div class="muted">JPG, PNG, WebP or AVIF · up to 20 MB each. Photos are automatically resized and compressed for web. The first uploaded photo becomes cover automatically.</div>
+  <div id="pendingPhotoList" class="pendingPhotoList"></div>
+  <div id="existingPhotoGrid" class="photoManager">${id?photoManagerHtml(v):'<div class="photoEmpty muted">Save the vehicle to attach photos.</div>'}</div>
+</div></div><button class="btn blue full">${id?'Save Changes':'Create Vehicle'} →</button></div></form></div>`)}
 
 window.decodeVehicleVin=async()=>{
   const modal=document.getElementById('vehicleModal');
@@ -409,6 +423,47 @@ window.decodeVehicleVin=async()=>{
     if(btn){btn.disabled=false;btn.textContent='Decode VIN →'}
   }
 }
+window.importDrivePhotos=async vehicleId=>{
+  if(!vehicleId){toast('Save the vehicle first');return}
+  const input=document.getElementById('driveFolderUrl');
+  const button=document.getElementById('driveImportBtn');
+  const status=document.getElementById('driveImportStatus');
+  const folderUrl=String(input?.value||'').trim();
+  if(!folderUrl){toast('Paste a Google Drive folder link');return}
+  button.disabled=true;
+  button.textContent='Importing…';
+  if(status)status.textContent='Reading Google Drive folder and optimizing photos…';
+  try{
+    const result=await apiFetch('/api/v1/admin/vehicles/'+vehicleId+'/images/import-drive',{
+      method:'POST',
+      body:JSON.stringify({folderUrl})
+    });
+    await refreshVehiclePhotos(vehicleId);
+    if(status){
+      status.textContent=`Found ${result.found}. Imported ${result.importedCount}, skipped ${result.skippedCount}, failed ${result.failedCount}.`;
+    }
+    toast(result.importedCount
+      ?`Imported ${result.importedCount} photo${result.importedCount===1?'':'s'} from Google Drive`
+      :result.skippedCount
+        ?'All Google Drive photos were already imported'
+        :'No photos imported');
+  }catch(err){
+    const messages={
+      google_drive_not_configured:'Google Drive integration is not configured on the server yet',
+      invalid_google_drive_folder_url:'Paste a valid Google Drive folder URL',
+      google_drive_folder_not_public:'Folder is not public. Set sharing to “Anyone with the link”',
+      google_drive_no_images:'No image files found in this Drive folder',
+      google_drive_list_failed:'Could not read the Google Drive folder'
+    };
+    const key=err.body?.error||err.message;
+    if(status)status.textContent=messages[key]||('Import failed: '+key);
+    toast(messages[key]||'Google Drive import failed');
+  }finally{
+    button.disabled=false;
+    button.textContent='Import from Drive';
+  }
+};
+
 window.previewPendingPhotos=e=>{
   const files=[...(e.target.files||[])];
   const el=document.getElementById('pendingPhotoList');if(!el)return;

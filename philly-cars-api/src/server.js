@@ -220,9 +220,11 @@ async function requireAdmin(req, reply) {
 }
 
 async function requireOwner(req, reply) {
-  const denied = await requireAdmin(req, reply);
-  if (denied) return denied;
-  if (req.admin?.role !== 'owner') return reply.code(403).send({ error: 'owner_required' });
+  await requireAdmin(req, reply);
+  if (reply.sent) return;
+  if (req.admin?.role !== 'owner') {
+    return reply.code(403).send({ error: 'owner_required' });
+  }
 }
 
 app.get('/', async () => ({ ok: true, service: 'philly-cars-api', health: '/health' }));
@@ -348,7 +350,7 @@ app.delete('/api/v1/admin/session', { preHandler: requireAdmin }, async (req, re
   return { ok: true };
 });
 
-app.get('/api/v1/admin/accounts', { preHandler: requireOwner }, async req => {
+app.get('/api/v1/admin/accounts', { preHandler: requireAdmin }, async req => {
   const result = await pool.query(`
     SELECT id,email,role,active,created_at,last_login_at
     FROM admin_users
@@ -356,7 +358,9 @@ app.get('/api/v1/admin/accounts', { preHandler: requireOwner }, async req => {
   `);
   return {
     accounts: result.rows,
-    currentUserId: req.admin.id
+    currentUserId: req.admin.id,
+    currentRole: req.admin.role,
+    canManage: req.admin.role === 'owner'
   };
 });
 

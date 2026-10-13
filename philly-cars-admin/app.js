@@ -23,6 +23,7 @@ const UI_TO_API_STATUS=Object.fromEntries(Object.entries(API_TO_UI_STATUS).map((
 const isApiSession=()=>sessionStorage.getItem('phillyAdminApiSession')==='1';
 let adminAccounts=[];
 let currentAdminId='';
+let canManageAccounts=false;
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const getAdminToken=()=>sessionStorage.getItem('phillyAdminToken')||'';
 async function apiFetch(path,options={}){
@@ -246,8 +247,9 @@ async function loadAccounts(){
     const data=await apiFetch('/api/v1/admin/accounts');
     adminAccounts=data.accounts||[];
     currentAdminId=data.currentUserId||'';
-    if(status)status.textContent=adminAccounts.length+' account'+(adminAccounts.length===1?'':'s');
-    if(addBtn)addBtn.disabled=false;
+    canManageAccounts=Boolean(data.canManage);
+    if(status)status.textContent=adminAccounts.length+' account'+(adminAccounts.length===1?'':'s')+(canManageAccounts?'':' · view only');
+    if(addBtn){addBtn.disabled=!canManageAccounts;addBtn.title=canManageAccounts?'':'Owner access required';}
     if(rows)rows.innerHTML=adminAccounts.map(a=>{
       const last=a.last_login_at?new Date(a.last_login_at).toLocaleString():'Never';
       const created=a.created_at?new Date(a.created_at).toLocaleDateString():'—';
@@ -256,19 +258,18 @@ async function loadAccounts(){
         <td><span class="accountRole ${a.role}">${esc(a.role)}</span></td>
         <td><span class="syncPill ${a.active?'ready':'off'}">${a.active?'Active':'Disabled'}</span></td>
         <td>${esc(last)}</td><td>${esc(created)}</td>
-        <td><button class="smallBtn" onclick="openAccountModal('${a.id}')">Edit</button></td>
+        <td><button class="smallBtn" ${canManageAccounts?'':'disabled title="Owner access required"'} onclick="openAccountModal('${a.id}')">Edit</button></td>
       </tr>`;
     }).join('');
   }catch(err){
     if(rows)rows.innerHTML='';
     if(addBtn)addBtn.disabled=true;
-    if(status)status.innerHTML=err.status===403
-      ?'<div class="notice"><b>Owner access required.</b><br>Managers can use the Dealer OS but cannot manage administrator accounts.</div>'
-      :'<div class="notice">Could not load accounts.</div>';
+    if(status)status.innerHTML='<div class="notice">Could not load accounts.</div>';
   }
 }
 
 window.openAccountModal=(id='')=>{
+  if(!canManageAccounts){toast('Owner access required');return}
   const account=id?adminAccounts.find(a=>a.id===id):null;
   if(id&&!account){toast('Account not found');return}
   const isEdit=Boolean(account);

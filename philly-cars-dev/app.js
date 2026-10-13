@@ -170,7 +170,7 @@ function detail(id){
           ${vehicleFeaturePanel(v)}
           <div class="detailSections simplifiedDetails">
             <div class="detailBox glass"><div class="eyebrow">Overview</div><h2>About this vehicle</h2><p class="muted vehicleDescription">${vehicleOverview(v)}</p></div>
-            <div class="detailBox glass"><div class="eyebrow">Equipment</div><h2>Highlights</h2><div class="featureList">${v.features.length?v.features.map(f=>`<div class="featureItem">${f}</div>`).join(''):'<div class="muted">Equipment details coming soon.</div>'}</div></div>
+            ${v.features.length?`<div class="detailBox glass"><div class="eyebrow">Equipment</div><h2>Highlights</h2><div class="featureList">${v.features.map(f=>`<div class="featureItem">${f}</div>`).join('')}</div></div>`:''}
             <div class="detailBox glass"><div class="eyebrow">Interested?</div><h2>Ask about this vehicle.</h2><p class="muted">Reference stock #${v.stock} when you contact us.</p><button class="btn blue" onclick="quickInquiry('${v.id}')">Send Inquiry →</button></div>
           </div>
         </div>

@@ -334,3 +334,16 @@ select option{background:#121722;color:#f3f6fb}
 #leadModal .modalHead>div{min-width:0;overflow-wrap:anywhere}
 #leadModal .modalHead h2{font-size:clamp(22px,4vw,30px)}
 @media(max-width:600px){#leadModal .formGrid{grid-template-columns:minmax(0,1fr)}#leadModal .field{grid-column:1/-1}}
+
+/* P2: reserve space for the fixed mobile navigation, including iPhone safe areas. */
+@media(max-width:640px){
+  body{padding-bottom:calc(98px + env(safe-area-inset-bottom,0px))}
+  .mobileBottom{
+    bottom:calc(10px + env(safe-area-inset-bottom,0px));
+    padding:7px;
+    max-width:calc(100vw - 20px);
+  }
+  .mobileBottom a{min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .toast{bottom:calc(98px + env(safe-area-inset-bottom,0px));left:12px;right:12px;text-align:center}
+  html{scroll-padding-bottom:calc(110px + env(safe-area-inset-bottom,0px))}
+}

@@ -250,3 +250,26 @@ select option{background:#121722;color:#f3f6fb}
 .descriptionEditorHead b{display:block;margin-bottom:4px}
 .descriptionTextarea{min-height:230px;resize:vertical;line-height:1.55;white-space:pre-wrap}
 @media(max-width:700px){.descriptionEditorHead{flex-direction:column}.descriptionEditorHead .btn{width:100%}}
+
+/* Distribution connections */
+.connectionCard{display:flex;flex-direction:column;gap:12px;min-height:245px}
+.connectionCardTop{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.connectionMeta{display:grid;gap:5px;font-size:11px;color:var(--muted)}
+.connectionMeta b{color:var(--ink);margin-right:6px}
+.connectionActions{display:flex;gap:7px;flex-wrap:wrap;margin-top:auto}
+.connectionError{padding:10px 11px;border-radius:13px;background:rgba(255,107,114,.10);border:1px solid rgba(255,107,114,.18);color:#ff9298;font-size:11px;line-height:1.45;max-height:86px;overflow:auto}
+.channelState.error{background:rgba(255,107,114,.12);color:#ff8f96}
+.distributionFeedPanel{overflow:hidden}
+.feedRows{display:grid;gap:9px}
+.feedRow{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px;border:1px solid var(--line);border-radius:15px;background:rgba(255,255,255,.035)}
+.feedRow>div{display:grid;gap:3px;min-width:0}
+.feedRow span{font-size:10px}
+.feedRow code{font-size:10px;color:#8fbfff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(720px,65vw)}
+.connectionModalCard{max-width:720px}
+.connectionLoading{opacity:.65}
+@media(max-width:700px){
+  .feedRow{align-items:flex-start;flex-direction:column}
+  .feedRow .smallBtn{width:100%}
+  .feedRow code{max-width:78vw}
+  .connectionModalCard{max-width:none}
+}

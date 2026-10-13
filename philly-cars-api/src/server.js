@@ -35,6 +35,30 @@ await app.register(cors, {
 
 const hashToken = value => crypto.createHash('sha256').update(value).digest('hex');
 const slugify = s => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const DISTRIBUTION_CHANNELS=new Set(['website','facebook','google','cargurus','cars','autotrader']);
+const PUBLIC_SITE_URL=String(process.env.CLIENT_ORIGIN||'https://philly-cars-dev.onrender.com').replace(/\/$/,'');
+const csvCell=value=>'"'+String(value??'').replace(/"/g,'""').replace(/[\r\n]+/g,' ').trim()+'"';
+const tsvCell=value=>String(value??'').replace(/[\t\r\n]+/g,' ').trim();
+const absoluteApiOrigin=req=>String(process.env.PUBLIC_API_URL||(`${req.protocol}://${req.headers.host}`)).replace(/\/$/,'');
+const vehicleVdpUrl=vehicle=>PUBLIC_SITE_URL+'/#/vehicle/'+encodeURIComponent(vehicle.slug);
+const absoluteVehicleImageUrl=(req,path)=>path?(path.startsWith('http')?path:absoluteApiOrigin(req)+path):'';
+
+async function getDistributionInventory() {
+  const result=await pool.query(`
+    SELECT v.*,
+      (
+        SELECT vi.path
+        FROM vehicle_images vi
+        WHERE vi.vehicle_id=v.id
+        ORDER BY vi.is_cover DESC,vi.sort_order ASC,vi.created_at ASC
+        LIMIT 1
+      ) AS cover_path
+    FROM vehicles v
+    WHERE v.status IN ('ready_to_publish','available','deposit')
+    ORDER BY v.created_at DESC
+  `);
+  return result.rows;
+}
 
 const VIN_PATTERN = /\b[A-HJ-NPR-Z0-9]{17}\b/g;
 
@@ -626,6 +650,96 @@ app.get('/api/v1/vehicles/:slug', async (req, reply) => {
   `, [req.params.slug]);
   if (!result.rowCount) return reply.code(404).send({ error: 'not_found' });
   return result.rows[0];
+});
+
+app.get('/api/v1/feeds/inventory.json', async req => {
+  const vehicles=await getDistributionInventory();
+  return {
+    generatedAt:new Date().toISOString(),
+    source:'Philly Cars',
+    vehicles:vehicles.map(v=>({
+      id:v.id,
+      stockNumber:v.stock_number,
+      vin:v.vin,
+      year:v.year,
+      make:v.make,
+      model:v.model,
+      trim:v.trim,
+      price:v.price,
+      mileage:v.mileage,
+      bodyStyle:v.body_style,
+      exteriorColor:v.exterior_color,
+      interiorColor:v.interior_color,
+      drivetrain:v.drivetrain,
+      transmission:v.transmission,
+      engine:v.engine,
+      fuelType:v.fuel_type,
+      titleStatus:v.title_status,
+      status:v.status,
+      description:v.description,
+      features:v.features,
+      url:vehicleVdpUrl(v),
+      imageUrl:absoluteVehicleImageUrl(req,v.cover_path)
+    }))
+  };
+});
+
+app.get('/api/v1/feeds/inventory.csv', async (req, reply) => {
+  const vehicles=await getDistributionInventory();
+  const header=['stock_number','vin','year','make','model','trim','price','mileage','body_style','exterior_color','interior_color','drivetrain','transmission','engine','fuel_type','title_status','status','description','features','url','image_url'];
+  const rows=vehicles.map(v=>[
+    v.stock_number,v.vin,v.year,v.make,v.model,v.trim,v.price,v.mileage,v.body_style,v.exterior_color,
+    v.interior_color,v.drivetrain,v.transmission,v.engine,v.fuel_type,v.title_status,v.status,v.description,
+    Array.isArray(v.features)?v.features.join(', '):'',vehicleVdpUrl(v),absoluteVehicleImageUrl(req,v.cover_path)
+  ].map(csvCell).join(','));
+  reply.header('Content-Type','text/csv; charset=utf-8');
+  reply.header('Content-Disposition','inline; filename="philly-cars-inventory.csv"');
+  reply.header('Cache-Control','public, max-age=300');
+  return reply.send([header.map(csvCell).join(','),...rows].join('\n'));
+});
+
+app.get('/api/v1/feeds/google-vehicles.tsv', async (req, reply) => {
+  const configResult=await pool.query("SELECT config FROM distribution_connections WHERE channel='google' LIMIT 1");
+  const config=configResult.rows[0]?.config||{};
+  const fulfillment=config.fulfillment==='online'?'online':'in_store';
+  const storeCode=String(config.storeCode||'').trim();
+  const vehicles=(await getDistributionInventory()).filter(v=>['ready_to_publish','available'].includes(v.status));
+
+  const header=[
+    'id','title','description','link','link_template','image_link','availability','price','condition','brand','model','year',
+    'mileage','color','vin','vehicle_option','vehicle_fulfillment(option)','vehicle_fulfillment(store_code)'
+  ];
+  const rows=vehicles.map(v=>{
+    const title=[v.year,v.make,v.model,v.trim].filter(Boolean).join(' ');
+    const options=Array.isArray(v.features)?v.features.join(', '):'';
+    return [
+      v.stock_number||v.id,
+      title,
+      v.description||title,
+      vehicleVdpUrl(v),
+      fulfillment==='in_store'
+        ?PUBLIC_SITE_URL+'/?store={store_code}#/vehicle/'+encodeURIComponent(v.slug)
+        :'',
+      absoluteVehicleImageUrl(req,v.cover_path),
+      'in_stock',
+      Number(v.price||0).toFixed(2)+' USD',
+      'used',
+      v.make,
+      v.model,
+      v.year,
+      Number(v.mileage||0)+' miles',
+      v.exterior_color||'',
+      v.vin||'',
+      options,
+      fulfillment,
+      fulfillment==='in_store'?storeCode:''
+    ].map(tsvCell).join('\t');
+  });
+
+  reply.header('Content-Type','text/tab-separated-values; charset=utf-8');
+  reply.header('Content-Disposition','inline; filename="philly-cars-google-vehicles.tsv"');
+  reply.header('Cache-Control','public, max-age=300');
+  return reply.send([header.join('\t'),...rows].join('\n'));
 });
 
 app.get('/api/v1/vehicle-images/:id', async (req, reply) => {
@@ -1372,6 +1486,125 @@ app.delete('/api/v1/admin/vehicles/:vehicleId/images/:imageId', { preHandler: re
   } finally {
     client.release();
   }
+});
+
+app.get('/api/v1/admin/distribution/connections', { preHandler: requireAdmin }, async req => {
+  const result=await pool.query('SELECT * FROM distribution_connections ORDER BY channel');
+  const apiOrigin=absoluteApiOrigin(req);
+  return {
+    connections:result.rows,
+    canManage:req.admin.role==='owner',
+    feeds:{
+      google:apiOrigin+'/api/v1/feeds/google-vehicles.tsv',
+      inventoryCsv:apiOrigin+'/api/v1/feeds/inventory.csv',
+      inventoryJson:apiOrigin+'/api/v1/feeds/inventory.json'
+    },
+    publicSiteUrl:PUBLIC_SITE_URL
+  };
+});
+
+app.put('/api/v1/admin/distribution/connections/:channel', { preHandler: requireOwner }, async (req, reply) => {
+  const channel=String(req.params.channel||'').toLowerCase();
+  if(!DISTRIBUTION_CHANNELS.has(channel))return reply.code(400).send({error:'invalid_channel'});
+  if(channel==='website')return reply.code(400).send({error:'website_connection_is_internal'});
+
+  const current=await pool.query('SELECT * FROM distribution_connections WHERE channel=$1',[channel]);
+  if(!current.rowCount)return reply.code(404).send({error:'connection_not_found'});
+
+  const previous=current.rows[0];
+  const enabled=req.body?.enabled!==undefined?Boolean(req.body.enabled):previous.enabled;
+  const accountLabel=req.body?.accountLabel!==undefined?String(req.body.accountLabel||'').trim():previous.account_label;
+  const incomingConfig=req.body?.config&&typeof req.body.config==='object'?req.body.config:{};
+  const config={...(previous.config||{}),...incomingConfig};
+
+  const mode=channel==='google'?'scheduled_feed':channel==='facebook'?'manual':'partner_feed';
+  const status=enabled?'setup':'not_connected';
+  const result=await pool.query(`
+    UPDATE distribution_connections
+    SET enabled=$1,status=$2,mode=$3,account_label=$4,config=$5,last_error=null,updated_at=now()
+    WHERE channel=$6
+    RETURNING *
+  `,[enabled,status,mode,accountLabel||null,JSON.stringify(config),channel]);
+  return {connection:result.rows[0]};
+});
+
+app.post('/api/v1/admin/distribution/connections/:channel/test', { preHandler: requireAdmin }, async (req, reply) => {
+  const channel=String(req.params.channel||'').toLowerCase();
+  if(!DISTRIBUTION_CHANNELS.has(channel))return reply.code(400).send({error:'invalid_channel'});
+
+  const connectionResult=await pool.query('SELECT * FROM distribution_connections WHERE channel=$1',[channel]);
+  if(!connectionResult.rowCount)return reply.code(404).send({error:'connection_not_found'});
+  const connection=connectionResult.rows[0];
+  const config=connection.config||{};
+  const vehicles=await getDistributionInventory();
+
+  const issues=[];
+  let eligible=vehicles.length;
+
+  if(channel==='website'){
+    if(!vehicles.length)issues.push('No publishable vehicles in inventory');
+  }else if(channel==='google'){
+    if(!String(config.merchantCenterId||'').trim())issues.push('Merchant Center ID is missing');
+    if(!String(config.dealershipName||'').trim())issues.push('Dealership name is missing');
+    if(!String(config.dealershipAddress||'').trim())issues.push('Dealership address is missing');
+    if((config.fulfillment||'in_store')==='in_store'&&!String(config.storeCode||'').trim())issues.push('Google store code is missing for in-store fulfillment');
+
+    const googleVehicles=vehicles.filter(v=>['ready_to_publish','available'].includes(v.status));
+    eligible=0;
+    for(const v of googleVehicles){
+      const missing=[];
+      if(!v.vin)missing.push('VIN');
+      if(!v.make)missing.push('make');
+      if(!v.model)missing.push('model');
+      if(!v.year)missing.push('year');
+      if(!(Number(v.price)>0))missing.push('price');
+      if(!(Number(v.mileage)>=0))missing.push('mileage');
+      if(!v.cover_path)missing.push('photo');
+      if(!v.description)missing.push('description');
+      if(missing.length)issues.push(`${v.stock_number||v.id}: missing ${missing.join(', ')}`);
+      else eligible++;
+    }
+    if(!googleVehicles.length)issues.push('No Ready to Publish / Available vehicles');
+    if(/onrender\.com/i.test(PUBLIC_SITE_URL))issues.push('Production domain is not connected yet; use phillycars.com before Google review');
+  }else if(channel==='facebook'){
+    issues.push('Direct dealer Marketplace automation is not configured; keep this channel manual until Meta business access is confirmed');
+  }else{
+    if(!String(config.dealerAccountId||'').trim())issues.push('Dealer account ID is missing');
+    issues.push('Provider feed specification/onboarding confirmation is still required');
+  }
+
+  const ready=channel==='website'?issues.length===0:
+    channel==='google'?issues.length===0&&eligible>0:false;
+  const nextStatus=channel==='website'?'connected':ready?'ready':connection.enabled?'setup':'not_connected';
+  const lastError=issues.length?issues.slice(0,20).join(' | '):null;
+  const updated=await pool.query(`
+    UPDATE distribution_connections
+    SET status=$1,last_tested_at=now(),last_error=$2,updated_at=now()
+    WHERE channel=$3
+    RETURNING *
+  `,[nextStatus,lastError,channel]);
+
+  return {
+    ok:issues.length===0,
+    ready,
+    eligibleVehicles:eligible,
+    totalVehicles:vehicles.length,
+    issues,
+    connection:updated.rows[0]
+  };
+});
+
+app.post('/api/v1/admin/distribution/connections/:channel/confirm', { preHandler: requireOwner }, async (req, reply) => {
+  const channel=String(req.params.channel||'').toLowerCase();
+  if(!DISTRIBUTION_CHANNELS.has(channel)||channel==='website')return reply.code(400).send({error:'invalid_channel'});
+  const result=await pool.query(`
+    UPDATE distribution_connections
+    SET enabled=true,status='connected',last_sync_at=now(),last_error=null,updated_at=now()
+    WHERE channel=$1
+    RETURNING *
+  `,[channel]);
+  if(!result.rowCount)return reply.code(404).send({error:'connection_not_found'});
+  return {connection:result.rows[0]};
 });
 
 app.get('/api/v1/admin/vehicles/:id/publications', { preHandler: requireAdmin }, async (req, reply) => {

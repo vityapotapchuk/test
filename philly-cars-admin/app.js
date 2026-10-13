@@ -24,6 +24,7 @@ const isApiSession=()=>sessionStorage.getItem('phillyAdminApiSession')==='1';
 let adminAccounts=[];
 let currentAdminId='';
 let canManageAccounts=false;
+let distributionState={connections:[],feeds:{},canManage:false,publicSiteUrl:''};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const getAdminToken=()=>sessionStorage.getItem('phillyAdminToken')||'';
 async function apiFetch(path,options={}){
@@ -215,7 +216,251 @@ function inventoryAdmin(){return `<div class="adminShell">${sidebar('inventory')
 
 window.renderAdminRows=()=>{const el=document.getElementById('adminRows');if(!el)return;const q=(document.getElementById('adminQ')?.value||'').toLowerCase();const st=document.getElementById('adminStatus')?.value||'';const list=cars.filter(v=>(!q||`${v.year} ${v.make} ${v.model} ${v.stock} ${v.vin||''}`.toLowerCase().includes(q))&&(!st||v.status===st));el.innerHTML=list.map(v=>`<tr><td><div class="vehicleCell"><div class="miniCar" style="background-image:url('${img(v)}')"></div><div><b>${v.year} ${v.make} ${v.model}</b><br><span class="muted">${v.trim||'—'}</span>${v.carfax?'<br><span class="syncPill ready">CARFAX</span>':''}</div></div></td><td><b>${v.stock}</b><br><span class="muted vinText">${v.vin||'VIN not added'}</span></td><td>${miles(v.mileage)}</td><td><b>${money(v.price)}</b></td><td>${money(totalCost(v))}</td><td><b class="${gross(v)>=0?'positive':'negative'}">${money(gross(v))}</b></td><td><span class="status ${slugStatus(v.status)}">${v.status}</span></td><td><div class="actions"><button class="smallBtn" onclick="openVehicleModal('${v.id}')">Edit</button><button class="smallBtn" onclick="duplicateVehicle('${v.id}')">Duplicate</button><button class="smallBtn danger" onclick="archiveVehicle('${v.id}')">Archive</button></div></td></tr>`).join('')}
 
-function distribution(){return `<div class="adminShell">${sidebar('distribution')}<main class="adminMain">${mobileBar()}<div class="adminHead"><div><div class="eyebrow">Inventory syndication</div><h1>Distribution</h1><p class="muted">Website is the source of truth. Marketplace connectors will read from the same vehicle record.</p></div><div class="adminTopActions"><span class="adminBadge">Integration foundation</span></div></div><section class="channelCards">${CHANNELS.map(([key,label])=>`<div class="channelCard glass"><div><div class="eyebrow">${key==='website'?'Primary':'Channel'}</div><h3>${label}</h3></div><span class="channelState ${key==='website'?'live':'setup'}">${key==='website'?'Ready':'Not connected'}</span><p class="muted">${key==='website'?'Publishes from Philly Cars inventory.':key==='facebook'?'Manual publishing workflow first; partner integration later.':'Feed/API connector will be added after dealer account onboarding.'}</p></div>`).join('')}</section><section class="adminPanel glass" style="margin-top:18px"><div class="sectionHead"><div><div class="eyebrow">Vehicle readiness</div><h2>Publishing matrix</h2></div></div><div class="tableWrap"><table class="adminTable syncTable"><thead><tr><th>Vehicle</th>${CHANNELS.map(x=>`<th>${x[1]}</th>`).join('')}</tr></thead><tbody>${cars.filter(v=>v.status!=='Archived').map(v=>`<tr><td><b>${v.year} ${v.make} ${v.model}</b><br><span class="muted">${v.stock}</span></td>${CHANNELS.map(([key])=>`<td><span class="syncPill ${key==='website'&&ACTIVE_STATUSES.includes(v.status)?'ready':key==='facebook'?'manual':'off'}">${key==='website'&&ACTIVE_STATUSES.includes(v.status)?'Ready':key==='facebook'?'Manual':'Not connected'}</span></td>`).join('')}</tr>`).join('')}</tbody></table></div></section></main></div>`}
+function distribution(){
+  return `<div class="adminShell">${sidebar('distribution')}<main class="adminMain">${mobileBar()}
+    <div class="adminHead">
+      <div>
+        <div class="eyebrow">Inventory syndication</div>
+        <h1>Distribution</h1>
+        <p class="muted">Connect Philly Cars inventory to marketplaces and advertising channels from one place.</p>
+      </div>
+      <div class="adminTopActions"><span class="adminBadge">Inventory source: API + DB</span></div>
+    </div>
+
+    <section class="channelCards" id="distributionCards">
+      ${CHANNELS.map(([,label])=>`<div class="channelCard glass connectionLoading"><h3>${label}</h3><p class="muted">Loading connection…</p></div>`).join('')}
+    </section>
+
+    <section class="adminPanel glass distributionFeedPanel" style="margin-top:18px">
+      <div class="sectionHead">
+        <div><div class="eyebrow">Feed endpoints</div><h2>Inventory feeds</h2></div>
+      </div>
+      <div id="distributionFeeds" class="feedRows"><div class="muted">Loading feed URLs…</div></div>
+    </section>
+
+    <section class="adminPanel glass" style="margin-top:18px">
+      <div class="sectionHead"><div><div class="eyebrow">Vehicle readiness</div><h2>Publishing matrix</h2></div></div>
+      <div class="tableWrap"><table class="adminTable syncTable">
+        <thead><tr><th>Vehicle</th>${CHANNELS.map(x=>`<th>${x[1]}</th>`).join('')}</tr></thead>
+        <tbody id="distributionMatrix"><tr><td colspan="${CHANNELS.length+1}" class="muted">Loading channel status…</td></tr></tbody>
+      </table></div>
+    </section>
+  </main></div>`;
+}
+
+const DISTRIBUTION_META={
+  website:{
+    label:'Website',
+    eyebrow:'Primary',
+    description:'Philly Cars website publishes directly from the master inventory database.'
+  },
+  facebook:{
+    label:'Facebook Marketplace',
+    eyebrow:'Marketplace',
+    description:'Manual workflow until Meta dealer/business inventory access is confirmed.'
+  },
+  google:{
+    label:'Google Vehicle Ads',
+    eyebrow:'Advertising',
+    description:'Merchant Center vehicle feed with automated inventory updates.'
+  },
+  cargurus:{
+    label:'CarGurus',
+    eyebrow:'Marketplace',
+    description:'Dealer partner feed. Account onboarding and provider feed specification are required.'
+  },
+  cars:{
+    label:'Cars.com',
+    eyebrow:'Marketplace',
+    description:'Dealer inventory feed. Final adapter is enabled after Cars.com dealer onboarding.'
+  },
+  autotrader:{
+    label:'Autotrader',
+    eyebrow:'Marketplace',
+    description:'Dealer inventory feed. Final adapter is enabled after dealer/provider onboarding.'
+  }
+};
+
+function distributionConnection(key){
+  return distributionState.connections.find(x=>x.channel===key)||null;
+}
+function connectionStateClass(status){
+  return status==='connected'?'live':status==='ready'?'live':status==='error'?'error':'setup';
+}
+function connectionStateLabel(status){
+  return ({connected:'Connected',ready:'Feed Ready',setup:'Setup required',error:'Error',not_connected:'Not connected'})[status]||'Not connected';
+}
+function renderDistributionConnections(){
+  const cards=document.getElementById('distributionCards');
+  const feeds=document.getElementById('distributionFeeds');
+  const matrix=document.getElementById('distributionMatrix');
+  if(!cards||!feeds||!matrix)return;
+
+  cards.innerHTML=CHANNELS.map(([key,label])=>{
+    const c=distributionConnection(key)||{channel:key,status:'not_connected',enabled:false,config:{}};
+    const meta=DISTRIBUTION_META[key]||{label,eyebrow:'Channel',description:''};
+    const tested=c.last_tested_at?new Date(c.last_tested_at).toLocaleString():'Not tested';
+    const error=c.last_error?esc(c.last_error):'';
+    const feedButton=key==='google'&&distributionState.feeds.google
+      ?`<button class="smallBtn" onclick="copyDistributionFeed('google')">Copy Feed URL</button>`
+      :['cargurus','cars','autotrader'].includes(key)&&distributionState.feeds.inventoryCsv
+        ?`<button class="smallBtn" onclick="copyDistributionFeed('inventoryCsv')">Copy Feed URL</button>`
+        :'';
+    const configure=key==='website'
+      ?''
+      :`<button class="smallBtn" ${distributionState.canManage?'':'disabled title="Owner access required"'} onclick="openDistributionConnection('${key}')">Configure</button>`;
+
+    return `<div class="channelCard glass connectionCard">
+      <div class="connectionCardTop">
+        <div><div class="eyebrow">${meta.eyebrow}</div><h3>${meta.label}</h3></div>
+        <span class="channelState ${connectionStateClass(c.status)}">${connectionStateLabel(c.status)}</span>
+      </div>
+      <p class="muted">${meta.description}</p>
+      <div class="connectionMeta">
+        <span><b>Mode</b> ${esc(c.mode||'—')}</span>
+        <span><b>Last test</b> ${esc(tested)}</span>
+      </div>
+      ${error?`<div class="connectionError">${error}</div>`:''}
+      <div class="connectionActions">
+        ${configure}
+        <button class="smallBtn" onclick="testDistributionConnection('${key}')">Test</button>
+        ${feedButton}
+      </div>
+    </div>`;
+  }).join('');
+
+  feeds.innerHTML=[
+    ['Google Merchant Center',distributionState.feeds.google,'TSV vehicle feed'],
+    ['Partner CSV',distributionState.feeds.inventoryCsv,'Normalized dealer inventory'],
+    ['Inventory JSON',distributionState.feeds.inventoryJson,'API-friendly inventory']
+  ].filter(x=>x[1]).map(([label,url,desc])=>`<div class="feedRow">
+    <div><b>${label}</b><span class="muted">${desc}</span><code>${esc(url)}</code></div>
+    <button class="smallBtn" onclick="copyText('${esc(url)}')">Copy URL</button>
+  </div>`).join('');
+
+  matrix.innerHTML=cars.filter(v=>v.status!=='Archived').map(v=>`<tr>
+    <td><b>${v.year} ${v.make} ${v.model}</b><br><span class="muted">${v.stock}</span></td>
+    ${CHANNELS.map(([key])=>{
+      const c=distributionConnection(key);
+      if(key==='website'){
+        const ready=ACTIVE_STATUSES.includes(v.status);
+        return `<td><span class="syncPill ${ready?'ready':'off'}">${ready?'Live-ready':'Not public'}</span></td>`;
+      }
+      if(key==='facebook')return '<td><span class="syncPill manual">Manual</span></td>';
+      const ready=Boolean(c&&['ready','connected'].includes(c.status)&&ACTIVE_STATUSES.includes(v.status));
+      return `<td><span class="syncPill ${ready?'ready':'off'}">${ready?'Feed-ready':'Not ready'}</span></td>`;
+    }).join('')}
+  </tr>`).join('')||`<tr><td colspan="${CHANNELS.length+1}" class="muted">No inventory yet.</td></tr>`;
+}
+
+async function loadDistributionConnections(){
+  if(!isApiSession())return;
+  try{
+    distributionState=await apiFetch('/api/v1/admin/distribution/connections');
+    renderDistributionConnections();
+  }catch(err){
+    const cards=document.getElementById('distributionCards');
+    if(cards)cards.innerHTML='<div class="notice">Could not load distribution connections.</div>';
+  }
+}
+
+window.copyText=async value=>{
+  try{await navigator.clipboard.writeText(value);toast('Copied')}catch{toast('Copy failed')}
+};
+window.copyDistributionFeed=key=>{
+  const value=distributionState.feeds?.[key];
+  if(value)copyText(value);
+};
+
+window.testDistributionConnection=async key=>{
+  const meta=DISTRIBUTION_META[key];
+  toast('Testing '+(meta?.label||key)+'…');
+  try{
+    const result=await apiFetch('/api/v1/admin/distribution/connections/'+key+'/test',{method:'POST',body:JSON.stringify({})});
+    await loadDistributionConnections();
+    if(result.ready||result.ok)toast((meta?.label||key)+' is ready');
+    else toast((result.issues||[])[0]||'Setup is incomplete');
+  }catch(err){
+    toast('Connection test failed');
+  }
+};
+
+window.openDistributionConnection=key=>{
+  if(!distributionState.canManage){toast('Owner access required');return}
+  const c=distributionConnection(key)||{config:{}};
+  const cfg=c.config||{};
+  const meta=DISTRIBUTION_META[key]||{label:key};
+  let fields='';
+
+  if(key==='google'){
+    fields=`
+      <div class="field"><label>Merchant Center ID</label><input class="fieldInput" name="merchantCenterId" value="${esc(cfg.merchantCenterId||'')}" placeholder="123456789"></div>
+      <div class="field"><label>Fulfillment</label><select class="fieldInput" name="fulfillment"><option value="in_store" ${cfg.fulfillment!=='online'?'selected':''}>In-store</option><option value="online" ${cfg.fulfillment==='online'?'selected':''}>Online</option></select></div>
+      <div class="field"><label>Google Store Code</label><input class="fieldInput" name="storeCode" value="${esc(cfg.storeCode||'')}" placeholder="Business Profile store code"></div>
+      <div class="field"><label>Dealership Name</label><input class="fieldInput" name="dealershipName" value="${esc(cfg.dealershipName||'Philly Cars')}" placeholder="Philly Cars"></div>
+      <div class="field full"><label>Dealership Address</label><input class="fieldInput" name="dealershipAddress" value="${esc(cfg.dealershipAddress||'')}" placeholder="Full dealership address"></div>
+    `;
+  }else if(key==='facebook'){
+    fields=`
+      <div class="field"><label>Business / Portfolio ID</label><input class="fieldInput" name="businessId" value="${esc(cfg.businessId||'')}" placeholder="Optional"></div>
+      <div class="field"><label>Facebook Page ID</label><input class="fieldInput" name="pageId" value="${esc(cfg.pageId||'')}" placeholder="Optional"></div>
+      <div class="notice full">This remains a manual channel until dealer inventory access is confirmed. No Facebook password is stored here.</div>
+    `;
+  }else{
+    fields=`
+      <div class="field"><label>Dealer Account ID</label><input class="fieldInput" name="dealerAccountId" value="${esc(cfg.dealerAccountId||'')}" placeholder="Provided by ${esc(meta.label)}"></div>
+      <div class="field"><label>Provider Contact</label><input class="fieldInput" name="providerContact" value="${esc(cfg.providerContact||'')}" placeholder="Account rep / onboarding email"></div>
+      <div class="notice full">Use the Partner CSV URL from Distribution when your marketplace representative requests the inventory feed. Final field mapping will be adapted to the provider specification.</div>
+    `;
+  }
+
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="distributionModal">
+    <form class="modalCard connectionModalCard" onsubmit="saveDistributionConnection(event,'${key}')">
+      <div class="modalHead"><div><div class="eyebrow">Distribution connection</div><h2>${esc(meta.label)}</h2></div><button type="button" class="smallBtn" onclick="distributionModal.remove()">✕</button></div>
+      <div class="formGrid">
+        <div class="field full"><label>Connection enabled</label><select class="fieldInput" name="enabled"><option value="true" ${c.enabled?'selected':''}>Enabled</option><option value="false" ${!c.enabled?'selected':''}>Disabled</option></select></div>
+        ${fields}
+        <div class="field full"><label>Notes</label><textarea class="fieldInput" name="notes" placeholder="Onboarding notes, account rep, requirements…">${esc(cfg.notes||'')}</textarea></div>
+      </div>
+      <button class="btn blue full">Save Connection →</button>
+      <div id="distributionSaveStatus" class="muted"></div>
+    </form>
+  </div>`);
+};
+
+window.saveDistributionConnection=async(e,key)=>{
+  e.preventDefault();
+  const form=e.target;
+  const fd=new FormData(form);
+  const config={notes:String(fd.get('notes')||'').trim()};
+  if(key==='google'){
+    config.merchantCenterId=String(fd.get('merchantCenterId')||'').trim();
+    config.fulfillment=String(fd.get('fulfillment')||'in_store');
+    config.storeCode=String(fd.get('storeCode')||'').trim();
+    config.dealershipName=String(fd.get('dealershipName')||'').trim();
+    config.dealershipAddress=String(fd.get('dealershipAddress')||'').trim();
+  }else if(key==='facebook'){
+    config.businessId=String(fd.get('businessId')||'').trim();
+    config.pageId=String(fd.get('pageId')||'').trim();
+  }else{
+    config.dealerAccountId=String(fd.get('dealerAccountId')||'').trim();
+    config.providerContact=String(fd.get('providerContact')||'').trim();
+  }
+
+  const status=document.getElementById('distributionSaveStatus');
+  if(status)status.textContent='Saving…';
+  try{
+    await apiFetch('/api/v1/admin/distribution/connections/'+key,{
+      method:'PUT',
+      body:JSON.stringify({enabled:fd.get('enabled')==='true',accountLabel:DISTRIBUTION_META[key]?.label||key,config})
+    });
+    document.getElementById('distributionModal')?.remove();
+    await loadDistributionConnections();
+    toast('Connection settings saved');
+  }catch(err){
+    if(status)status.textContent='Could not save connection.';
+  }
+};
 
 function leads(){return `<div class="adminShell">${sidebar('leads')}<main class="adminMain">${mobileBar()}<div class="adminHead"><div><div class="eyebrow">Lead inbox</div><h1>Leads</h1><p class="muted">Test drives, trade-ins, sell requests and vehicle inquiries.</p></div></div><section class="adminPanel glass"><div class="tableWrap"><table class="adminTable"><thead><tr><th>Type</th><th>Name</th><th>Phone</th><th>Vehicle</th><th>Date</th><th>Status</th></tr></thead><tbody>${DEMO_LEADS.map(x=>`<tr><td>${x.kind}</td><td><b>${x.name}</b></td><td>${x.phone}</td><td>${x.vehicle}</td><td>${new Date(x.date).toLocaleDateString()}</td><td><span class="syncPill ready">New</span></td></tr>`).join('')}</tbody></table></div></section></main></div>`}
 
@@ -590,5 +835,5 @@ window.archiveVehicle=async id=>{
   if(isApiSession()){try{await apiFetch('/api/v1/admin/vehicles/'+id+'/archive',{method:'POST'});v.status='Archived';saveCars();render();toast('Vehicle archived in database');return}catch(err){toast('Archive failed');return}}
   v.status='Archived';saveCars();render();toast('Vehicle archived locally')
 }
-function render(){if(!isLogged()){document.getElementById('app').innerHTML=login();return}const path=(location.hash.slice(1)||'/inventory').split('?')[0];let html=path==='/dashboard'?dashboard():path==='/distribution'?distribution():path==='/leads'?leads():path==='/accounts'?accounts():path==='/settings'?settings():inventoryAdmin();document.getElementById('app').innerHTML=html;if(path==='/inventory'||path==='/'){setTimeout(renderAdminRows,0)}if(path==='/accounts'){setTimeout(loadAccounts,0)}if(path==='/dashboard'){setTimeout(()=>{const e=document.getElementById('recentRows');if(e)e.innerHTML=cars.slice(0,5).map(v=>`<div class="vehicleCell recentLine"><div class="miniCar" style="background-image:url('${img(v)}')"></div><div style="flex:1"><b>${v.year} ${v.make} ${v.model}</b><br><span class="muted">${v.stock} · ${money(v.price)} · cost ${money(totalCost(v))}</span></div><span class="status ${slugStatus(v.status)}">${v.status}</span></div>`).join('')},0)}}
+function render(){if(!isLogged()){document.getElementById('app').innerHTML=login();return}const path=(location.hash.slice(1)||'/inventory').split('?')[0];let html=path==='/dashboard'?dashboard():path==='/distribution'?distribution():path==='/leads'?leads():path==='/accounts'?accounts():path==='/settings'?settings():inventoryAdmin();document.getElementById('app').innerHTML=html;if(path==='/inventory'||path==='/'){setTimeout(renderAdminRows,0)}if(path==='/accounts'){setTimeout(loadAccounts,0)}if(path==='/distribution'){setTimeout(loadDistributionConnections,0)}if(path==='/dashboard'){setTimeout(()=>{const e=document.getElementById('recentRows');if(e)e.innerHTML=cars.slice(0,5).map(v=>`<div class="vehicleCell recentLine"><div class="miniCar" style="background-image:url('${img(v)}')"></div><div style="flex:1"><b>${v.year} ${v.make} ${v.model}</b><br><span class="muted">${v.stock} · ${money(v.price)} · cost ${money(totalCost(v))}</span></div><span class="status ${slugStatus(v.status)}">${v.status}</span></div>`).join('')},0)}}
 window.addEventListener('hashchange',render);render();

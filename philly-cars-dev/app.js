@@ -320,7 +320,28 @@ window.submitModalLead=async(e,kind,vehicle,stock)=>{
   finally{form.dataset.submitting='false';if(button)button.disabled=false}
 }
 function notFound(){return `${header()}<main class="container page"><section class="pageHero"><h1>Page not found.</h1><a class="btn blue" href="#/">Back Home</a></section></main>${footer()}`}
-function render(){const {path,params}=parseRoute();let html;if(path==='/')html=home();else if(path==='/inventory')html=inventory(params);else if(path.startsWith('/car/'))html=detail(path.split('/').pop());else if(path==='/trade-in')html=genericForm('trade-in','Value Your Trade in Philadelphia.','Send your vehicle details for a quick review.','Get My Estimate');else if(path==='/sell')html=genericForm('sell','Sell your car to Philly Cars.','Request a straightforward offer with no obligation.','Request an Offer');else if(path==='/about')html=about();else if(path==='/contact')html=contact();else if(path==='/saved')html=savedPage();else html=notFound();document.getElementById('app').innerHTML=html;if(path==='/inventory')setTimeout(applyFilters,0);window.scrollTo(0,0)}
+function updatePageMetadata(path){
+  const vehicle=path.startsWith('/car/')?cars.find(v=>v.id===path.split('/').pop()):null;
+  const titles={'/':'Pre-Owned Cars in Philadelphia','/inventory':'Used Car Inventory','/trade-in':'Trade In Your Car','/sell':'Sell Your Car','/about':'About Us','/contact':'Contact Us','/saved':'Saved Vehicles'};
+  const title=vehicle?`${vehicle.year} ${vehicle.make} ${vehicle.model} | Philly Cars`:`${titles[path]||'Page Not Found'} | Philly Cars`;
+  const description=vehicle?`Explore this ${vehicle.year} ${vehicle.make} ${vehicle.model} at Philly Cars in Philadelphia. View photos, details and send an inquiry.`:({
+    '/':'Browse pre-owned vehicles at Philly Cars in Philadelphia.',
+    '/inventory':'Explore the current Philly Cars inventory by make, year, body style and price.',
+    '/trade-in':'Submit your trade-in vehicle details to Philly Cars.',
+    '/sell':'Request an offer for your vehicle from Philly Cars.',
+    '/about':'Learn about Philly Cars and browse available pre-owned vehicles.',
+    '/contact':'Contact Philly Cars with questions about vehicles and availability.',
+    '/saved':'Review vehicles saved on this device.'
+  }[path]||'Browse pre-owned vehicles at Philly Cars.');
+  document.title=title;
+  const setMeta=(selector,attribute,value)=>{const el=document.querySelector(selector);if(el)el.setAttribute(attribute,value)};
+  setMeta('meta[name="description"]','content',description);
+  setMeta('meta[property="og:title"]','content',title);
+  setMeta('meta[property="og:description"]','content',description);
+  setMeta('meta[name="twitter:title"]','content',title);
+  setMeta('meta[name="twitter:description"]','content',description);
+}
+function render(){const {path,params}=parseRoute();let html;if(path==='/')html=home();else if(path==='/inventory')html=inventory(params);else if(path.startsWith('/car/'))html=detail(path.split('/').pop());else if(path==='/trade-in')html=genericForm('trade-in','Value Your Trade in Philadelphia.','Send your vehicle details for a quick review.','Get My Estimate');else if(path==='/sell')html=genericForm('sell','Sell your car to Philly Cars.','Request a straightforward offer with no obligation.','Request an Offer');else if(path==='/about')html=about();else if(path==='/contact')html=contact();else if(path==='/saved')html=savedPage();else html=notFound();document.getElementById('app').innerHTML=html;updatePageMetadata(path);if(path==='/inventory')setTimeout(applyFilters,0);window.scrollTo(0,0)}
 window.addEventListener('hashchange',render);
 document.getElementById('app').innerHTML='<main class="page"><div class="container"><section class="pageHero"><div class="eyebrow">Philly Cars</div><h1>Loading inventory…</h1><p class="muted">Connecting to the dealership inventory system.</p></section></div></main>';
 loadInventory().finally(render);

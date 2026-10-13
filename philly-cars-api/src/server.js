@@ -650,19 +650,18 @@ app.patch('/api/v1/admin/vehicles/:vehicleId/images/:imageId', { preHandler: req
       await client.query('UPDATE vehicle_images SET is_cover=false WHERE vehicle_id=$1', [req.params.vehicleId]);
     }
     const sets=[]; const values=[];
-    if (isCover !== undefined) { values.push(Boolean(isCover)); sets.push(`is_cover=${values.length}`); }
-    if (sortOrder !== undefined) { values.push(Number(sortOrder)); sets.push(`sort_order=${values.length}`); }
-    if (altText !== undefined) { values.push(altText || null); sets.push(`alt_text=${values.length}`); }
+    if (isCover !== undefined) { values.push(Boolean(isCover)); sets.push('is_cover=$'+values.length); }
+    if (sortOrder !== undefined) { values.push(Number(sortOrder)); sets.push('sort_order=$'+values.length); }
+    if (altText !== undefined) { values.push(altText || null); sets.push('alt_text=$'+values.length); }
     if (!sets.length) {
       await client.query('ROLLBACK');
       return reply.code(400).send({ error: 'no_changes' });
     }
-    values.push(req.params.imageId, req.params.vehicleId);
-    const result = await client.query(
-      `UPDATE vehicle_images SET ${sets.join(',')} WHERE id=${values.length-1} AND vehicle_id=${values.length}
-       RETURNING id,path,alt_text,sort_order,is_cover,content_type,original_name,size_bytes`,
-      values
-    );
+    const imageParam=values.length+1; values.push(req.params.imageId);
+    const vehicleParam=values.length+1; values.push(req.params.vehicleId);
+    const sql='UPDATE vehicle_images SET '+sets.join(',')+' WHERE id=$'+imageParam+' AND vehicle_id=$'+vehicleParam+
+      ' RETURNING id,path,alt_text,sort_order,is_cover,content_type,original_name,size_bytes';
+    const result = await client.query(sql, values);
     await client.query('COMMIT');
     return result.rows[0];
   } catch (err) {

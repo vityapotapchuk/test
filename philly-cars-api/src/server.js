@@ -706,7 +706,7 @@ app.get('/api/v1/feeds/google-vehicles.tsv', async (req, reply) => {
   const vehicles=(await getDistributionInventory()).filter(v=>['ready_to_publish','available'].includes(v.status));
 
   const header=[
-    'id','title','description','link','image_link','availability','price','condition','brand','model','year',
+    'id','title','description','link','link_template','image_link','availability','price','condition','brand','model','year',
     'mileage','color','vin','vehicle_option','vehicle_fulfillment(option)','vehicle_fulfillment(store_code)'
   ];
   const rows=vehicles.map(v=>{
@@ -717,6 +717,9 @@ app.get('/api/v1/feeds/google-vehicles.tsv', async (req, reply) => {
       title,
       v.description||title,
       vehicleVdpUrl(v),
+      fulfillment==='in_store'
+        ?PUBLIC_SITE_URL+'/?store={store_code}#/vehicle/'+encodeURIComponent(v.slug)
+        :'',
       absoluteVehicleImageUrl(req,v.cover_path),
       'in_stock',
       Number(v.price||0).toFixed(2)+' USD',

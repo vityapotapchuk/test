@@ -247,6 +247,9 @@ function validateLeadContact(form){
   if(phone&&(!/^[+()\d\s.-]+$/.test(phone)||phone.replace(/\D/g,'').length<10||phone.replace(/\D/g,'').length>15))return fail('Please enter a valid phone number.','phone');
   if(email&&(email.length>254||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)))return fail('Please enter a valid email.','email');
   if(data.vin&&!/^[A-HJ-NPR-Z0-9]{17}$/i.test(String(data.vin).trim()))return fail('VIN must contain 17 valid characters.','vin');
+  const year=String(data.year||'').trim(),mileage=String(data.mileage||'').trim();
+  if(year&&(!/^\d{4}$/.test(year)||Number(year)<1980||Number(year)>new Date().getFullYear()+1))return fail('Please enter a valid vehicle year.','year');
+  if(mileage&&(!/^\d+$/.test(mileage)||!Number.isSafeInteger(Number(mileage))))return fail('Mileage must be a non-negative whole number.','mileage');
   return true;
 }
 window.submitLead=async(e,kind)=>{

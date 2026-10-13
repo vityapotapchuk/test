@@ -840,19 +840,38 @@ app.post('/api/v1/admin/import/carfax', { preHandler: requireAdmin }, async (req
     const acquiredAt=new Date().toISOString().slice(0,10);
     const titleStatus=summary.titleStatus||'Other';
 
+    let recalls=null;
+    try{recalls=await fetchNhtsaRecalls(decoded.year,decoded.make,decoded.model);}
+    catch(err){req.log.warn({err,vin:summary.vin},'CARFAX description recall enrichment unavailable');}
+
+    const descriptionSeed={
+      year:decoded.year,make:decoded.make,model:decoded.model,trim:decoded.trim||null,
+      mileage:summary.mileage||0,body_style:decoded.bodyStyle||null,drivetrain:decoded.drivetrain||null,
+      transmission:decoded.transmission||null,engine:decoded.engine||null,fuel_type:decoded.fuelType||null,
+      title_status:titleStatus,stock_number:stockNumber,vin:summary.vin
+    };
+    const generatedDescription=buildVehicleDescription(descriptionSeed,{
+      carfaxSummary:summary,
+      vinDecode:decoded,
+      recalls
+    });
+    const descriptionGeneratedAt=new Date().toISOString();
+
     const vehicleResult=await client.query(`
       INSERT INTO vehicles(
         slug,stock_number,vin,year,make,model,trim,price,mileage,
-        acquired_at,body_style,drivetrain,transmission,engine,fuel_type,title_status,status
+        acquired_at,body_style,drivetrain,transmission,engine,fuel_type,title_status,status,
+        description,description_generated_at
       )
-      VALUES($1,$2,$3,$4,$5,$6,$7,0,$8,$9,$10,$11,$12,$13,$14,$15,'acquired')
+      VALUES($1,$2,$3,$4,$5,$6,$7,0,$8,$9,$10,$11,$12,$13,$14,$15,'acquired',$16,$17)
       RETURNING *
     `,[
       slug,stockNumber,summary.vin,decoded.year,decoded.make,decoded.model,decoded.trim||null,
       summary.mileage||0,acquiredAt,decoded.bodyStyle||null,decoded.drivetrain||null,
-      decoded.transmission||null,decoded.engine||null,decoded.fuelType||null,titleStatus
+      decoded.transmission||null,decoded.engine||null,decoded.fuelType||null,titleStatus,
+      generatedDescription,descriptionGeneratedAt
     ]);
-    const vehicle=vehicleResult.rows[0];
+    let vehicle=vehicleResult.rows[0];
 
     const parsedData={
       source:'carfax',
@@ -870,11 +889,35 @@ app.post('/api/v1/admin/import/carfax', { preHandler: requireAdmin }, async (req
       vehicle.id,part.filename||'carfax.pdf',pdfBuffer.length,digest,pdfBuffer,parsedText,JSON.stringify(parsedData)
     ]);
 
+    const descriptionSources={
+      generator:'philly-cars-facts-v1',
+      generatedAt:descriptionGeneratedAt,
+      carfax:{
+        documentId:documentResult.rows[0].id,
+        originalName:documentResult.rows[0].original_name,
+        reportDate:summary.reportDate||null
+      },
+      nhtsaVpic:{
+        url:'https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValuesExtended/'+encodeURIComponent(summary.vin)+'?format=json'
+      },
+      nhtsaRecalls:recalls?{
+        url:recalls.sourceUrl,
+        count:recalls.count,
+        campaigns:recalls.campaigns
+      }:null
+    };
+    const descriptionUpdate=await client.query(
+      'UPDATE vehicles SET description_sources=$1 WHERE id=$2 RETURNING *',
+      [JSON.stringify(descriptionSources),vehicle.id]
+    );
+    vehicle=descriptionUpdate.rows[0];
+
     await client.query('COMMIT');
     return reply.code(201).send({
       vehicle,
       carfax:parsedData,
-      document:documentResult.rows[0]
+      document:documentResult.rows[0],
+      descriptionSources
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -940,7 +983,13 @@ app.post('/api/v1/admin/vehicles', { preHandler: requireAdmin }, async (req, rep
     INSERT INTO vehicles(slug,stock_number,vin,year,make,model,trim,price,mileage,purchase_price,auction_fees,transport_cost,recon_cost,other_cost,acquired_at,body_style,exterior_color,interior_color,drivetrain,transmission,engine,fuel_type,title_status,status,description,features)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26) RETURNING *
   `,[slug,b.stockNumber,b.vin||null,Number(b.year),b.make,b.model,b.trim||null,Number(b.price||0),Number(b.mileage||0),Number(b.purchasePrice||0),Number(b.auctionFees||0),Number(b.transportCost||0),Number(b.reconCost||0),Number(b.otherCost||0),b.acquiredAt||null,b.bodyStyle||null,b.exteriorColor||null,b.interiorColor||null,b.drivetrain||null,b.transmission||null,b.engine||null,b.fuelType||null,b.titleStatus||null,b.status||'acquired',b.description||null,JSON.stringify(b.features||[])]);
-  return reply.code(201).send(result.rows[0]);
+  try{
+    const generated=await generateAndPersistVehicleDescription(result.rows[0].id);
+    return reply.code(201).send(generated.vehicle);
+  }catch(err){
+    req.log.warn({err,vehicleId:result.rows[0].id},'Automatic description generation failed');
+    return reply.code(201).send(result.rows[0]);
+  }
 });
 
 app.patch('/api/v1/admin/vehicles/:id', { preHandler: requireAdmin }, async (req, reply) => {
@@ -959,6 +1008,21 @@ app.patch('/api/v1/admin/vehicles/:id', { preHandler: requireAdmin }, async (req
   const result = await pool.query(`UPDATE vehicles SET ${sets.join(',')}, updated_at=now() WHERE id=$${values.length} RETURNING *`, values);
   if (!result.rowCount) return reply.code(404).send({ error:'not_found' });
   return result.rows[0];
+});
+
+app.post('/api/v1/admin/vehicles/:id/generate-description', { preHandler: requireAdmin }, async (req, reply) => {
+  try{
+    const result=await generateAndPersistVehicleDescription(req.params.id);
+    return {
+      ok:true,
+      vehicle:result.vehicle,
+      sources:result.sources
+    };
+  }catch(err){
+    if(String(err?.message)==='vehicle_not_found')return reply.code(404).send({error:'vehicle_not_found'});
+    req.log.warn({err,vehicleId:req.params.id},'Vehicle description generation failed');
+    return reply.code(502).send({error:'description_generation_failed'});
+  }
 });
 
 app.post('/api/v1/admin/vehicles/:id/archive', { preHandler: requireAdmin }, async (req, reply) => {

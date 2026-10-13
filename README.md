@@ -56,3 +56,7 @@ For a saved vehicle, Admin can store a public Google Drive folder URL and import
 ## Automatic vehicle descriptions
 
 New vehicles receive a factual English listing description automatically. CARFAX imports use the parsed CARFAX history plus official NHTSA vPIC VIN data and NHTSA recall search data. Manually created vehicles generate from the vehicle record and available NHTSA data. Admin can edit the text or use **Regenerate Description** after vehicle details change. Generated-source metadata and generation time are stored with the vehicle. The generator only includes fields returned by the underlying sources and does not invent equipment.
+
+## Distribution connections
+
+Dealer OS > Distribution stores channel connection settings in PostgreSQL and exposes normalized inventory feeds from the master vehicle table. Public feed endpoints include Google Merchant Center TSV, generic CSV, and JSON. Google readiness checks Merchant Center/store configuration plus VIN, price, mileage, photo and description completeness. CarGurus, Cars.com and Autotrader use the normalized partner feed until each provider's dealer-specific feed specification is confirmed during onboarding. Facebook remains manual until eligible Meta dealer/business inventory access is confirmed.

@@ -111,7 +111,7 @@ function vehicleFeaturePanel(v){
 
 function vehicleOverview(v){
   const description=String(v.description||'').trim();
-  if(!description)return 'Vehicle details and history are available from Philly Cars. Contact us to schedule a viewing or test drive.';
+  if(!description)return '';
 
   const fullName=`${v.year} ${v.make} ${v.model}`.trim().toLowerCase();
   const exactSpecs=new Set([
@@ -132,7 +132,7 @@ function vehicleOverview(v){
     return true;
   });
 
-  return kept.join('\n\n')||'Contact Philly Cars for full vehicle details and history.';
+  return kept.join('\n\n');
 }
 function toast(msg){const el=document.createElement('div');el.className='toast';el.textContent=msg;document.getElementById('toast-root').appendChild(el);setTimeout(()=>el.remove(),2200)}
 function icon(n){return {'home':'⌂','car':'▰','heart':'♡','menu':'☰','trade':'↔','sell':'◇','about':'◌','contact':'✉','admin':'⌘'}[n]||'•'}
@@ -187,7 +187,7 @@ function detail(id){
         <div>
           ${vehicleFeaturePanel(v)}
           <div class="detailSections simplifiedDetails">
-            <div class="detailBox glass"><div class="eyebrow">Overview</div><h2>About this vehicle</h2><p class="muted vehicleDescription">${vehicleOverview(v)}</p></div>
+            ${vehicleOverview(v)?`<div class="detailBox glass"><div class="eyebrow">Overview</div><h2>About this vehicle</h2><p class="muted vehicleDescription">${vehicleOverview(v)}</p></div>`:''}
             ${v.features.length?`<div class="detailBox glass"><div class="eyebrow">Equipment</div><h2>Highlights</h2><div class="featureList">${v.features.map(f=>`<div class="featureItem">${f}</div>`).join('')}</div></div>`:''}
             <div class="detailBox glass"><div class="eyebrow">Interested?</div><h2>Ask about this vehicle.</h2><p class="muted">Reference stock #${v.stock} when you contact us.</p><button class="btn blue" onclick="quickInquiry('${v.id}')">Send Inquiry →</button></div>
           </div>

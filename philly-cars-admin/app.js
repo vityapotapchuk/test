@@ -22,7 +22,9 @@ const API_TO_UI_STATUS={acquired:'Acquired',reconditioning:'Reconditioning',phot
 const UI_TO_API_STATUS=Object.fromEntries(Object.entries(API_TO_UI_STATUS).map(([k,v])=>[v,k]));
 const isApiSession=()=>sessionStorage.getItem('phillyAdminApiSession')==='1';
 async function apiFetch(path,options={}){
-  const res=await fetch(API_BASE+path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});
+  const isForm=options.body instanceof FormData;
+  const headers={...(isForm?{}:{'Content-Type':'application/json'}),...(options.headers||{})};
+  const res=await fetch(API_BASE+path,{credentials:'include',...options,headers});
   let body={}; try{body=await res.json()}catch{}
   if(!res.ok){const err=new Error(body.error||('HTTP '+res.status));err.status=res.status;err.body=body;throw err}
   return body;
@@ -33,7 +35,7 @@ function apiToUiVehicle(v){return normalizeVehicle({
   trans:v.transmission||'',engine:v.engine||'',fuel:v.fuel_type||'Gasoline',status:API_TO_UI_STATUS[v.status]||'Acquired',
   image:'car1.jpg',stock:v.stock_number||'',vin:v.vin||'',title:v.title_status||'Clean Title',
   purchasePrice:v.purchase_price||0,auctionFees:v.auction_fees||0,transportCost:v.transport_cost||0,reconCost:v.recon_cost||0,otherCost:v.other_cost||0,
-  acquiredAt:v.acquired_at?String(v.acquired_at).slice(0,10):'',features:Array.isArray(v.features)?v.features:[]
+  acquiredAt:v.acquired_at?String(v.acquired_at).slice(0,10):'',features:Array.isArray(v.features)?v.features:[],images:Array.isArray(v.images)?v.images:[]
 })}
 function uiToApiVehicle(v){return {
   stockNumber:v.stock,vin:v.vin||null,year:+v.year,make:v.make,model:v.model,trim:v.trim||null,price:+v.price||0,mileage:+v.mileage||0,
@@ -54,7 +56,22 @@ const DEMO_LEADS=[
 ];
 const money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(+n||0);
 const miles=n=>new Intl.NumberFormat('en-US').format(+n||0)+' mi';
-const img=v=>{if(v.customImage)return v.customImage;const n=parseInt(String(v.image||'1').replace(/\D/g,''),10)||1;return REMOTE_IMAGES[(n-1)%REMOTE_IMAGES.length]};
+const imageUrl=path=>!path?'':path.startsWith('/')?API_BASE+path:path;
+const img=v=>{const cover=v.images?.find(x=>x.is_cover)||v.images?.[0];if(cover?.path)return imageUrl(cover.path);if(v.customImage)return v.customImage;const n=parseInt(String(v.image||'1').replace(/\D/g,''),10)||1;return REMOTE_IMAGES[(n-1)%REMOTE_IMAGES.length]};
+function photoManagerHtml(v){
+  const list=v.images||[];
+  if(!list.length)return '<div class="photoEmpty muted">No real photos uploaded yet.</div>';
+  return list.map((p,i)=>`<div class="photoCard ${p.is_cover?'cover':''}">
+    <div class="photoCardImage" style="background-image:url('${imageUrl(p.path)}')"></div>
+    <div class="photoCardMeta"><b>${p.is_cover?'Cover':'Photo '+(i+1)}</b><span>${p.original_name||''}</span></div>
+    <div class="photoCardActions">
+      <button type="button" class="smallBtn" ${i===0?'disabled':''} onclick="moveVehicleImage('${v.id}','${p.id}',-1)">←</button>
+      <button type="button" class="smallBtn" ${i===list.length-1?'disabled':''} onclick="moveVehicleImage('${v.id}','${p.id}',1)">→</button>
+      ${p.is_cover?'':'<button type="button" class="smallBtn" onclick="setVehicleCover(\''+v.id+'\',\''+p.id+'\')">Set cover</button>'}
+      <button type="button" class="smallBtn danger" onclick="deleteVehicleImage('${v.id}','${p.id}')">Remove</button>
+    </div>
+  </div>`).join('');
+}
 const slugStatus=s=>String(s||'').replace(/[^a-z0-9]/gi,'');
 const totalCost=v=>(+v.purchasePrice||0)+(+v.auctionFees||0)+(+v.transportCost||0)+(+v.reconCost||0)+(+v.otherCost||0);
 const gross=v=>(+v.price||0)-totalCost(v);
@@ -112,7 +129,7 @@ function leads(){return `<div class="adminShell">${sidebar('leads')}<main class=
 
 function settings(){return `<div class="adminShell">${sidebar('settings')}<main class="adminMain">${mobileBar()}<div class="adminHead"><div><div class="eyebrow">Dealer settings</div><h1>Settings</h1><p class="muted">Contact information and API configuration used by the client website.</p></div></div><section class="formCard glass"><div class="formGrid"><div class="field"><label>Dealership name</label><input class="fieldInput" value="Philly Cars"></div><div class="field"><label>Phone</label><input class="fieldInput" placeholder="Add real dealership phone"></div><div class="field full"><label>Public website</label><input class="fieldInput" value="https://phillycars.com"></div><div class="field full"><label>API endpoint</label><input class="fieldInput" value="https://philly-cars-api-dev.onrender.com" disabled></div><div class="field full"><label>Inventory architecture</label><div class="notice">Admin → PostgreSQL → Website + marketplace feeds. Facebook starts as a manual workflow; other channels get connectors after onboarding.</div></div><button class="btn blue full" onclick="event.preventDefault();toast('Settings UI ready; backend save comes with API deployment')">Save Settings</button></div></section></main></div>`}
 
-window.openVehicleModal=(id='')=>{const v=normalizeVehicle(cars.find(x=>x.id===id)||{year:new Date().getFullYear(),make:'',model:'',trim:'',mileage:0,price:0,body:'SUV',color:'Black',interior:'Black',drive:'AWD',trans:'Automatic',engine:'',fuel:'Gasoline',status:'Acquired',stock:'PC'+String(1060+cars.length),title:'Clean Title',features:[]});document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="vehicleModal"><form class="modalCard" onsubmit="saveVehicle(event,'${id}')"><div class="modalHead"><div><div class="eyebrow">Master vehicle record</div><h2>${id?'Edit Vehicle':'Add Vehicle'}</h2></div><button type="button" class="smallBtn" onclick="vehicleModal.remove()">✕</button></div><div class="subhead">Vehicle identity</div><div class="formGrid">${[['year','Year',v.year],['make','Make',v.make],['model','Model',v.model],['trim','Trim',v.trim],['stock','Stock Number',v.stock],['vin','VIN',v.vin],['price','Retail Price',v.price],['mileage','Mileage',v.mileage],['engine','Engine',v.engine],['color','Exterior Color',v.color],['interior','Interior Color',v.interior],['acquiredAt','Acquired Date',v.acquiredAt]].map(([n,l,val])=>`<div class="field"><label>${l}</label><input class="fieldInput" name="${n}" value="${val??''}" ${['make','model','price','stock'].includes(n)?'required':''} ${n==='vin'?'maxlength="17"':''} ${n==='acquiredAt'?'type="date"':''}></div>`).join('')}<div class="field"><label>Body Style</label><select class="fieldInput" name="body">${['SUV','Sedan','Coupe','Truck','Hatchback','EV','Wagon','Convertible'].map(x=>`<option ${v.body===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Drivetrain</label><select class="fieldInput" name="drive">${['AWD','RWD','FWD','4WD'].map(x=>`<option ${v.drive===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Title Status</label><select class="fieldInput" name="title">${['Clean Title','Rebuilt Title','Salvage Title','Other'].map(x=>`<option ${v.title===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>VIN Decoder</label><button type="button" class="btn soft" id="decodeVinBtn" onclick="decodeVehicleVin()">Decode VIN →</button></div><div class="field"><label>Workflow Status</label><select class="fieldInput" name="status">${ALL_STATUSES.map(x=>`<option ${v.status===x?'selected':''}>${x}</option>`).join('')}</select></div></div><div class="subhead">Cost & margin</div><div class="formGrid">${[['purchasePrice','Purchase Price',v.purchasePrice],['auctionFees','Auction / Buyer Fees',v.auctionFees],['transportCost','Transport',v.transportCost],['reconCost','Reconditioning',v.reconCost],['otherCost','Other Cost',v.otherCost]].map(([n,l,val])=>`<div class="field"><label>${l}</label><input class="fieldInput" name="${n}" inputmode="numeric" value="${val||0}"></div>`).join('')}<div class="field marginPreview"><label>Current Gross</label><div class="fieldValue">${money(gross(v))}</div></div><div class="field full"><label>Features (comma separated)</label><input class="fieldInput" name="features" value="${(v.features||[]).join(', ')}"></div><div class="field full"><label>Vehicle Photo</label><div class="photoDrop"><input type="file" accept="image/*" onchange="previewUpload(event)"><div class="muted">Preview storage only in this test build. Production photos will use server storage.</div><div id="photoPreview" class="previewImage ${v.customImage||v.image?'':'hide'}" style="background-image:url('${img(v)}')"></div><input type="hidden" id="customImage" name="customImage" value="${v.customImage||''}"></div></div><button class="btn blue full">${id?'Save Changes':'Create Vehicle'} →</button></div></form></div>`)}
+window.openVehicleModal=(id='')=>{const v=normalizeVehicle(cars.find(x=>x.id===id)||{year:new Date().getFullYear(),make:'',model:'',trim:'',mileage:0,price:0,body:'SUV',color:'Black',interior:'Black',drive:'AWD',trans:'Automatic',engine:'',fuel:'Gasoline',status:'Acquired',stock:'PC'+String(1060+cars.length),title:'Clean Title',features:[]});document.body.insertAdjacentHTML('beforeend',`<div class="modal" id="vehicleModal"><form class="modalCard" onsubmit="saveVehicle(event,'${id}')"><div class="modalHead"><div><div class="eyebrow">Master vehicle record</div><h2>${id?'Edit Vehicle':'Add Vehicle'}</h2></div><button type="button" class="smallBtn" onclick="vehicleModal.remove()">✕</button></div><div class="subhead">Vehicle identity</div><div class="formGrid">${[['year','Year',v.year],['make','Make',v.make],['model','Model',v.model],['trim','Trim',v.trim],['stock','Stock Number',v.stock],['vin','VIN',v.vin],['price','Retail Price',v.price],['mileage','Mileage',v.mileage],['engine','Engine',v.engine],['color','Exterior Color',v.color],['interior','Interior Color',v.interior],['acquiredAt','Acquired Date',v.acquiredAt]].map(([n,l,val])=>`<div class="field"><label>${l}</label><input class="fieldInput" name="${n}" value="${val??''}" ${['make','model','price','stock'].includes(n)?'required':''} ${n==='vin'?'maxlength="17"':''} ${n==='acquiredAt'?'type="date"':''}></div>`).join('')}<div class="field"><label>Body Style</label><select class="fieldInput" name="body">${['SUV','Sedan','Coupe','Truck','Hatchback','EV','Wagon','Convertible'].map(x=>`<option ${v.body===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Drivetrain</label><select class="fieldInput" name="drive">${['AWD','RWD','FWD','4WD'].map(x=>`<option ${v.drive===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>Title Status</label><select class="fieldInput" name="title">${['Clean Title','Rebuilt Title','Salvage Title','Other'].map(x=>`<option ${v.title===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field"><label>VIN Decoder</label><button type="button" class="btn soft" id="decodeVinBtn" onclick="decodeVehicleVin()">Decode VIN →</button></div><div class="field"><label>Workflow Status</label><select class="fieldInput" name="status">${ALL_STATUSES.map(x=>`<option ${v.status===x?'selected':''}>${x}</option>`).join('')}</select></div></div><div class="subhead">Cost & margin</div><div class="formGrid">${[['purchasePrice','Purchase Price',v.purchasePrice],['auctionFees','Auction / Buyer Fees',v.auctionFees],['transportCost','Transport',v.transportCost],['reconCost','Reconditioning',v.reconCost],['otherCost','Other Cost',v.otherCost]].map(([n,l,val])=>`<div class="field"><label>${l}</label><input class="fieldInput" name="${n}" inputmode="numeric" value="${val||0}"></div>`).join('')}<div class="field marginPreview"><label>Current Gross</label><div class="fieldValue">${money(gross(v))}</div></div><div class="field full"><label>Features (comma separated)</label><input class="fieldInput" name="features" value="${(v.features||[]).join(', ')}"></div><div class="field full"><label>Vehicle Photos</label><div class="photoDrop"><input id="vehiclePhotos" name="photos" type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple onchange="previewPendingPhotos(event)"><div class="muted">JPG, PNG, WebP or AVIF · up to 8 MB each. The first uploaded photo becomes cover automatically.</div><div id="pendingPhotoList" class="pendingPhotoList"></div><div id="existingPhotoGrid" class="photoManager">${id?photoManagerHtml(v):'<div class="photoEmpty muted">Save the vehicle to attach photos.</div>'}</div></div></div><button class="btn blue full">${id?'Save Changes':'Create Vehicle'} →</button></div></form></div>`)}
 
 window.decodeVehicleVin=async()=>{
   const modal=document.getElementById('vehicleModal');
@@ -132,17 +149,69 @@ window.decodeVehicleVin=async()=>{
     if(btn){btn.disabled=false;btn.textContent='Decode VIN →'}
   }
 }
-window.previewUpload=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{document.getElementById('customImage').value=r.result;const p=document.getElementById('photoPreview');p.style.backgroundImage=`url('${r.result}')`;p.classList.remove('hide')};r.readAsDataURL(f)}
+window.previewPendingPhotos=e=>{
+  const files=[...(e.target.files||[])];
+  const el=document.getElementById('pendingPhotoList');if(!el)return;
+  el.innerHTML=files.map((f,i)=>`<div class="pendingPhoto"><div class="pendingThumb" style="background-image:url('${URL.createObjectURL(f)}')"></div><span>${i+1}. ${f.name}</span></div>`).join('');
+}
+async function uploadVehiclePhotos(vehicleId,files){
+  const allowed=new Set(['image/jpeg','image/png','image/webp','image/avif']);
+  for(let i=0;i<files.length;i++){
+    const file=files[i];
+    if(!allowed.has(file.type))throw new Error('Use JPG, PNG, WebP or AVIF photos');
+    if(file.size>8*1024*1024)throw new Error(file.name+' is larger than 8 MB');
+    const fd=new FormData();fd.append('file',file,file.name);
+    toast(`Uploading photo ${i+1} of ${files.length}…`);
+    await apiFetch('/api/v1/admin/vehicles/'+vehicleId+'/images',{method:'POST',body:fd});
+  }
+}
+async function refreshVehiclePhotos(vehicleId){
+  await loadCarsFromApi();
+  const v=cars.find(x=>x.id===vehicleId);
+  const grid=document.getElementById('existingPhotoGrid');
+  if(grid&&v)grid.innerHTML=photoManagerHtml(v);
+  renderAdminRows();
+}
+window.setVehicleCover=async(vehicleId,imageId)=>{
+  try{
+    await apiFetch('/api/v1/admin/vehicles/'+vehicleId+'/images/'+imageId,{method:'PATCH',body:JSON.stringify({isCover:true})});
+    await refreshVehiclePhotos(vehicleId);toast('Cover photo updated');
+  }catch(err){toast('Could not set cover photo')}
+}
+window.deleteVehicleImage=async(vehicleId,imageId)=>{
+  if(!confirm('Remove this photo?'))return;
+  try{
+    await apiFetch('/api/v1/admin/vehicles/'+vehicleId+'/images/'+imageId,{method:'DELETE'});
+    await refreshVehiclePhotos(vehicleId);toast('Photo removed');
+  }catch(err){toast('Could not remove photo')}
+}
+window.moveVehicleImage=async(vehicleId,imageId,dir)=>{
+  const v=cars.find(x=>x.id===vehicleId);if(!v)return;
+  const list=[...(v.images||[])];const i=list.findIndex(x=>x.id===imageId);const j=i+dir;
+  if(i<0||j<0||j>=list.length)return;
+  [list[i],list[j]]=[list[j],list[i]];
+  try{
+    await apiFetch('/api/v1/admin/vehicles/'+vehicleId+'/images/order',{method:'PUT',body:JSON.stringify({imageIds:list.map(x=>x.id)})});
+    await refreshVehiclePhotos(vehicleId);toast('Photo order updated');
+  }catch(err){toast('Could not reorder photos')}
+}
 window.saveVehicle=async(e,id)=>{
-  e.preventDefault();const d=Object.fromEntries(new FormData(e.target));
+  e.preventDefault();
+  const photoFiles=[...(e.target.querySelector('[name=photos]')?.files||[])];
+  const d=Object.fromEntries(new FormData(e.target));delete d.photos;
   ['year','price','mileage','purchasePrice','auctionFees','transportCost','reconCost','otherCost'].forEach(k=>d[k]=+d[k]||0);
   d.vin=(d.vin||'').trim().toUpperCase();d.features=(d.features||'').split(',').map(x=>x.trim()).filter(Boolean);
   const current=id?cars.find(x=>x.id===id):{};const next=normalizeVehicle({...current,...d,fuel:current?.fuel||'Gasoline'});
   if(isApiSession()){
     try{
       const saved=await apiFetch(id?'/api/v1/admin/vehicles/'+id:'/api/v1/admin/vehicles',{method:id?'PATCH':'POST',body:JSON.stringify(uiToApiVehicle(next))});
-      const mapped=apiToUiVehicle(saved);
-      cars=id?cars.map(x=>x.id===id?mapped:x):[mapped,...cars];saveCars();vehicleModal.remove();render();toast('Vehicle saved to database');return;
+      let photoError=null;
+      if(photoFiles.length){
+        try{await uploadVehiclePhotos(saved.id,photoFiles)}catch(err){photoError=err}
+      }
+      await loadCarsFromApi();saveCars();vehicleModal.remove();render();
+      toast(photoError?'Vehicle saved, but photo upload failed: '+photoError.message:(photoFiles.length?'Vehicle and photos saved':'Vehicle saved to database'));
+      return;
     }catch(err){toast('Database save failed: '+(err.body?.error||err.message));return}
   }
   if(id){cars=cars.map(x=>x.id===id?next:x)}else{next.id=`${d.make}-${d.model}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9]+/g,'-');next.image='car1.jpg';next.channels={website:'Ready',facebook:'Manual',google:'Not connected',cargurus:'Not connected',cars:'Not connected',autotrader:'Not connected'};cars.unshift(next)}

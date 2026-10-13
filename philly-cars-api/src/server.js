@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
+import sharp from 'sharp';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import pg from 'pg';
@@ -19,7 +20,7 @@ const devOriginAllowed = origin => /^https:\/\/philly-cars(?:-admin)?-dev\.onren
 
 await app.register(cookie);
 await app.register(multipart, {
-  limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 10 }
+  limits: { fileSize: 20 * 1024 * 1024, files: 1, fields: 10 }
 });
 await app.register(cors, {
   origin(origin, cb) {
@@ -302,7 +303,7 @@ app.post('/api/v1/admin/vehicles/:id/images', { preHandler: requireAdmin }, asyn
   try {
     part = await req.file();
   } catch (err) {
-    if (err?.statusCode === 413) return reply.code(413).send({ error: 'image_too_large', maxBytes: 8 * 1024 * 1024 });
+    if (err?.statusCode === 413) return reply.code(413).send({ error: 'image_too_large', maxBytes: 20 * 1024 * 1024 });
     throw err;
   }
   if (!part) return reply.code(400).send({ error: 'image_required' });
@@ -318,11 +319,23 @@ app.post('/api/v1/admin/vehicles/:id/images', { preHandler: requireAdmin }, asyn
     data = await part.toBuffer();
   } catch (err) {
     if (err?.statusCode === 413 || err?.code === 'FST_REQ_FILE_TOO_LARGE') {
-      return reply.code(413).send({ error: 'image_too_large', maxBytes: 8 * 1024 * 1024 });
+      return reply.code(413).send({ error: 'image_too_large', maxBytes: 20 * 1024 * 1024 });
     }
     throw err;
   }
   if (!data?.length) return reply.code(400).send({ error: 'empty_image' });
+
+  let optimized;
+  try {
+    optimized = await sharp(data, { failOn: 'none' })
+      .rotate()
+      .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 82, effort: 4, smartSubsample: true })
+      .toBuffer();
+  } catch (err) {
+    req.log.warn({ err }, 'Vehicle image optimization failed');
+    return reply.code(422).send({ error: 'image_processing_failed' });
+  }
 
   const stats = await pool.query(
     'SELECT count(*)::int AS count, coalesce(max(sort_order),-1)::int AS max_sort FROM vehicle_images WHERE vehicle_id=$1',
@@ -340,7 +353,7 @@ app.post('/api/v1/admin/vehicles/:id/images', { preHandler: requireAdmin }, asyn
     RETURNING id,path,alt_text,sort_order,is_cover,content_type,original_name,size_bytes,created_at
   `, [
     imageId, req.params.id, path, alt, sortOrder, first,
-    part.mimetype, part.filename || null, data.length, data
+    'image/webp', part.filename || null, optimized.length, optimized
   ]);
   return reply.code(201).send(result.rows[0]);
 });

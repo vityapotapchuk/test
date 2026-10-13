@@ -219,6 +219,12 @@ async function requireAdmin(req, reply) {
   req.adminSessionToken = raw;
 }
 
+async function requireOwner(req, reply) {
+  const denied = await requireAdmin(req, reply);
+  if (denied) return denied;
+  if (req.admin?.role !== 'owner') return reply.code(403).send({ error: 'owner_required' });
+}
+
 app.get('/', async () => ({ ok: true, service: 'philly-cars-api', health: '/health' }));
 app.get('/health', async () => ({ ok: true, service: 'philly-cars-api', database: HAS_DATABASE ? 'connected' : 'not_connected' }));
 
@@ -340,6 +346,102 @@ app.delete('/api/v1/admin/session', { preHandler: requireAdmin }, async (req, re
   if (raw) await pool.query('DELETE FROM admin_sessions WHERE token_hash=$1', [hashToken(raw)]);
   reply.clearCookie(COOKIE, { path: '/' });
   return { ok: true };
+});
+
+app.get('/api/v1/admin/accounts', { preHandler: requireOwner }, async req => {
+  const result = await pool.query(`
+    SELECT id,email,role,active,created_at,last_login_at
+    FROM admin_users
+    ORDER BY CASE WHEN role='owner' THEN 0 ELSE 1 END, created_at ASC
+  `);
+  return {
+    accounts: result.rows,
+    currentUserId: req.admin.id
+  };
+});
+
+app.post('/api/v1/admin/accounts', { preHandler: requireOwner }, async (req, reply) => {
+  const { email, password, role='manager', active=true } = req.body || {};
+  const normalizedEmail=String(email||'').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    return reply.code(400).send({ error: 'valid_email_required' });
+  }
+  if (String(password||'').length < 12) {
+    return reply.code(400).send({ error: 'password_min_12' });
+  }
+  if (!['owner','manager'].includes(role)) {
+    return reply.code(400).send({ error: 'invalid_role' });
+  }
+  const hash=await bcrypt.hash(String(password),12);
+  try {
+    const result=await pool.query(`
+      INSERT INTO admin_users(email,password_hash,role,active)
+      VALUES($1,$2,$3,$4)
+      RETURNING id,email,role,active,created_at,last_login_at
+    `,[normalizedEmail,hash,role,Boolean(active)]);
+    return reply.code(201).send({ account: result.rows[0] });
+  } catch (err) {
+    if (err?.code==='23505') return reply.code(409).send({ error: 'email_already_exists' });
+    throw err;
+  }
+});
+
+app.patch('/api/v1/admin/accounts/:id', { preHandler: requireOwner }, async (req, reply) => {
+  const accountId=String(req.params.id||'');
+  const existing=await pool.query(
+    'SELECT id,email,role,active FROM admin_users WHERE id=$1',
+    [accountId]
+  );
+  if(!existing.rowCount)return reply.code(404).send({error:'account_not_found'});
+
+  const current=existing.rows[0];
+  const email=req.body?.email!==undefined?String(req.body.email).trim().toLowerCase():current.email;
+  const role=req.body?.role!==undefined?String(req.body.role):current.role;
+  const active=req.body?.active!==undefined?Boolean(req.body.active):current.active;
+  const password=req.body?.password!==undefined?String(req.body.password):'';
+
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))return reply.code(400).send({error:'valid_email_required'});
+  if(!['owner','manager'].includes(role))return reply.code(400).send({error:'invalid_role'});
+  if(password && password.length<12)return reply.code(400).send({error:'password_min_12'});
+
+  const removingOwner = current.role==='owner' && current.active && (role!=='owner' || !active);
+  if(removingOwner){
+    const owners=await pool.query(
+      "SELECT count(*)::int AS count FROM admin_users WHERE role='owner' AND active=true AND id<>$1",
+      [accountId]
+    );
+    if(owners.rows[0].count<1)return reply.code(409).send({error:'last_owner_required'});
+  }
+
+  const values=[email,role,active,accountId];
+  let passwordSql='';
+  if(password){
+    const hash=await bcrypt.hash(password,12);
+    values.push(hash);
+    passwordSql=', password_hash=$5';
+  }
+
+  try{
+    const result=await pool.query(`
+      UPDATE admin_users
+      SET email=$1, role=$2, active=$3${passwordSql}
+      WHERE id=$4
+      RETURNING id,email,role,active,created_at,last_login_at
+    `,values);
+
+    const securityChanged = Boolean(password) || role!==current.role || active!==current.active;
+    if(securityChanged){
+      await pool.query('DELETE FROM admin_sessions WHERE user_id=$1',[accountId]);
+    }
+
+    return {
+      account:result.rows[0],
+      reauthRequired: securityChanged && accountId===req.admin.id
+    };
+  }catch(err){
+    if(err?.code==='23505')return reply.code(409).send({error:'email_already_exists'});
+    throw err;
+  }
 });
 
 app.get('/api/v1/admin/vin/:vin', { preHandler: requireAdmin }, async (req, reply) => {

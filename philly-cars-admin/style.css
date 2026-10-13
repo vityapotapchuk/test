@@ -67,3 +67,16 @@ body.mobileMenuOpen{overflow:hidden}
   .mobileMenuDrawer.open{transform:translateX(0)}
   .adminMobileBar .actions{display:none!important}
 }
+
+/* Admin accounts */
+.accountsTable{min-width:860px}
+.accountIdentity{display:flex;align-items:center;gap:10px}
+.accountAvatar{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;background:#edf4ff;color:#1a69ff;font-weight:850;flex:0 0 auto}
+.accountRole{display:inline-flex;padding:6px 9px;border-radius:999px;font-size:10px;font-weight:800;text-transform:capitalize}
+.accountRole.owner{background:#eee8ff;color:#6742b5}
+.accountRole.manager{background:#edf2f7;color:#566273}
+.accountModalCard{max-width:620px}
+@media(max-width:700px){
+  .accountModalCard{max-width:none}
+  .accountsTable{min-width:760px}
+}

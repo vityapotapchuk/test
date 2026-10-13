@@ -202,84 +202,139 @@ function buildVehicleDescription(vehicle,{carfaxSummary=null,vinDecode=null,reca
   const make=String(vehicle.make||'').trim();
   const model=String(vehicle.model||'').trim();
   const trim=String(vehicle.trim||'').trim();
-  const name=[year,make,model,trim].filter(Boolean).join(' ');
   const mileage=Number(vehicle.mileage||0);
-  const body=vehicle.body_style||vinDecode?.bodyStyle||vinDecode?.bodyClass||'';
-  const drivetrain=vehicle.drivetrain||vinDecode?.drivetrain||'';
-  const transmission=vehicle.transmission||vinDecode?.transmission||'';
-  const engine=vehicle.engine||vinDecode?.engine||'';
-  const fuel=vehicle.fuel_type||vinDecode?.fuelType||'';
-  const exterior=String(vehicle.exterior_color||'').trim();
-  const interior=String(vehicle.interior_color||'').trim();
+  const price=Number(vehicle.price||0);
+  const body=String(vehicle.body_style||vinDecode?.bodyStyle||vinDecode?.bodyClass||'').trim();
+  const drivetrain=String(vehicle.drivetrain||vinDecode?.drivetrain||'').trim();
+  const transmission=String(vehicle.transmission||vinDecode?.transmission||'').trim();
+  const engineRaw=String(vehicle.engine||vinDecode?.engine||'').trim();
+  const titleStatus=String(vehicle.title_status||carfaxSummary?.titleStatus||'').trim();
+  const seatRows=Number(vinDecode?.seatRows)||null;
+  const seats=Number(vinDecode?.seats)||null;
+  const features=Array.isArray(vehicle.features)?vehicle.features.filter(Boolean):[];
 
-  const intro=[];
-  intro.push(`${name || 'This vehicle'} is listed by Philly Cars${body ? ' as a '+body : ''}.`);
-  if(mileage>0)intro.push(`The odometer is recorded at ${new Intl.NumberFormat('en-US').format(mileage)} miles.`);
-  const colorBits=[];
-  if(exterior)colorBits.push(exterior+' exterior');
-  if(interior)colorBits.push(interior+' interior');
-  if(colorBits.length)intro.push(`The vehicle is configured with a ${colorBits.join(' and ')}.`);
+  const shortModel=[make,model].filter(Boolean).join(' ');
+  const fullName=[year,make,model].filter(Boolean).join(' ');
 
-  const specBits=[];
-  if(engine)specBits.push(engine+' engine');
-  if(transmission)specBits.push(transmission+' transmission');
-  if(drivetrain)specBits.push(drivetrain+' drivetrain');
-  if(fuel)specBits.push(fuel+' fuel type');
-  let specs='';
-  if(specBits.length){
-    specs=`Official NHTSA VIN data and the vehicle record identify ${specBits.join(', ')}.`;
-    const extra=[];
-    if(vinDecode?.engineHP)extra.push(vinDecode.engineHP+' hp');
-    if(vinDecode?.engineCylinders)extra.push(vinDecode.engineCylinders+' cylinders');
-    if(vinDecode?.transmissionSpeeds)extra.push(vinDecode.transmissionSpeeds+' transmission speeds');
-    if(vinDecode?.doors)extra.push(vinDecode.doors+' doors');
-    if(vinDecode?.seats)extra.push(vinDecode.seats+' seats');
-    if(vinDecode?.seatRows)extra.push(vinDecode.seatRows+' seating rows');
-    if(vinDecode?.turbo && !/^not applicable$/i.test(vinDecode.turbo))extra.push('turbo: '+vinDecode.turbo);
-    if(vinDecode?.electrificationLevel)extra.push(vinDecode.electrificationLevel);
-    if(vinDecode?.fuelTypeSecondary)extra.push('secondary fuel: '+vinDecode.fuelTypeSecondary);
-    if(extra.length)specs+=' Additional NHTSA-decoded specifications include '+extra.join(', ')+'.';
-    const origin=[vinDecode?.plantCity,vinDecode?.plantState,vinDecode?.plantCountry].filter(Boolean).join(', ');
-    if(origin)specs+=' NHTSA identifies the manufacturing location as '+origin+'.';
-    if(vinDecode?.manufacturer)specs+=' Manufacturer: '+vinDecode.manufacturer+'.';
-  }
-
-  let history='';
-  if(carfaxSummary){
-    const historyBits=[];
-    if(carfaxSummary.owners!=null)historyBits.push(`${carfaxSummary.owners} owner${carfaxSummary.owners===1?'':'s'} reported`);
-    if(carfaxSummary.serviceRecords!=null)historyBits.push(`${carfaxSummary.serviceRecords} service history record${carfaxSummary.serviceRecords===1?'':'s'}`);
-    if(carfaxSummary.usage?.length)historyBits.push('usage reported as '+carfaxSummary.usage.join(', '));
-    if(carfaxSummary.titleStatus)historyBits.push('title status parsed as '+carfaxSummary.titleStatus);
-    if(carfaxSummary.accidentCount!=null && carfaxSummary.accidentCount>0){
-      historyBits.push(`${carfaxSummary.accidentCount} accident/damage record${carfaxSummary.accidentCount===1?'':'s'} reported`);
-    }else if(carfaxSummary.accidentReported||carfaxSummary.damageReported){
-      historyBits.push('an accident or damage entry reported');
-    }else{
-      historyBits.push('no accident or damage entry flagged in the parsed CARFAX summary');
+  const descriptor=(()=>{
+    if(/suv|sport utility|crossover/i.test(body)){
+      if(seatRows>=3)return 'Modern 3-Row SUV';
+      return 'Modern SUV';
     }
-    history='The imported CARFAX report shows '+historyBits.join(', ')+'.';
-    if(carfaxSummary.reportDate)history+=' Report date: '+carfaxSummary.reportDate+'.';
+    if(/sedan/i.test(body))return 'Modern Sedan';
+    if(/coupe/i.test(body))return 'Sport Coupe';
+    if(/convertible|cabriolet/i.test(body))return 'Convertible';
+    if(/pickup|truck/i.test(body))return 'Modern Pickup';
+    if(/hatchback/i.test(body))return 'Versatile Hatchback';
+    if(/wagon/i.test(body))return 'Versatile Wagon';
+    if(/van|minivan/i.test(body))return 'Family Van';
+    if(/electric/i.test(vehicle.fuel_type||vinDecode?.fuelType||''))return 'Electric Vehicle';
+    return trim||body||'Pre-Owned Vehicle';
+  })();
+
+  const cleanEngine=(()=>{
+    if(!engineRaw)return '';
+    let value=engineRaw
+      .replace(/\s*·\s*[^·]+$/,'')
+      .replace(/\b(\d+)\s*-?cyl(?:inder)?s?\b/i,'$1-Cylinder')
+      .replace(/\s+/g,' ')
+      .trim();
+    if(vinDecode?.turbo && !/^not applicable$/i.test(vinDecode.turbo) && !/turbo/i.test(value)){
+      value+=' Turbo';
+    }
+    return value;
+  })();
+
+  const lines=[];
+  lines.push(`${fullName} – ${descriptor}`);
+  lines.push('');
+
+  if(titleStatus){
+    lines.push(titleStatus.replace(/\bTitle\b/,'title'));
+    lines.push('');
   }
 
-  let safety='';
-  if(recalls){
-    if(recalls.count>0){
-      safety=`NHTSA's public recall database currently returns ${recalls.count} recall campaign${recalls.count===1?'':'s'} for this year/make/model combination. Campaign presence at the model level does not establish this VIN's current recall status or whether repairs have already been completed; VIN-specific recall status should be verified with NHTSA or an authorized dealer.`;
+  if(mileage>0){
+    const lowMileage=mileage<=15000?'low-mileage ':'';
+    lines.push(`Selling a ${lowMileage}${fullName} with only ${new Intl.NumberFormat('en-US').format(mileage)} miles.`);
+  }else{
+    lines.push(`Selling a ${fullName}.`);
+  }
+  lines.push('');
+
+  const salesSentence=(()=>{
+    if(seatRows>=3){
+      return `This ${shortModel} offers three-row versatility, a spacious cabin, and a practical setup for family use or everyday driving.`;
+    }
+    if(/suv|sport utility|crossover/i.test(body)){
+      return `This ${shortModel} combines SUV versatility with a comfortable, practical layout for everyday driving.`;
+    }
+    if(/sedan/i.test(body)){
+      return `This ${shortModel} offers a comfortable sedan layout with a clean, practical setup for daily driving.`;
+    }
+    if(/coupe/i.test(body)){
+      return `This ${shortModel} combines a sporty two-door profile with an easy-to-live-with everyday setup.`;
+    }
+    if(/pickup|truck/i.test(body)){
+      return `This ${shortModel} offers a practical pickup configuration for everyday use, work, and hauling needs.`;
+    }
+    return `This ${shortModel} is presented with a clear set of verified specifications and vehicle-history details.`;
+  })();
+  lines.push(salesSentence);
+  lines.push('');
+
+  const highlights=[];
+  const addHighlight=value=>{
+    const v=String(value||'').trim();
+    if(!v)return;
+    if(!highlights.some(x=>x.toLowerCase()===v.toLowerCase()))highlights.push(v);
+  };
+
+  addHighlight(drivetrain);
+  addHighlight(cleanEngine);
+  if(seatRows>=3)addHighlight('3rd-row seating');
+  else if(seats)addHighlight(seats+'-passenger seating');
+  if(transmission && !/^automatic$/i.test(transmission))addHighlight(transmission);
+
+  for(const feature of features.slice(0,12))addHighlight(feature);
+
+  if(vinDecode?.engineHP)addHighlight(Math.round(vinDecode.engineHP)+' hp');
+  if(vinDecode?.electrificationLevel)addHighlight(vinDecode.electrificationLevel);
+
+  if(highlights.length){
+    for(const h of highlights)lines.push(h);
+    lines.push('');
+  }
+
+  if(carfaxSummary){
+    const history=[];
+    if(carfaxSummary.owners!=null){
+      history.push(`${carfaxSummary.owners} owner${carfaxSummary.owners===1?'':'s'} reported`);
+    }
+    if(carfaxSummary.serviceRecords!=null){
+      history.push(`${carfaxSummary.serviceRecords} service record${carfaxSummary.serviceRecords===1?'':'s'}`);
+    }
+    if(carfaxSummary.accidentCount!=null && carfaxSummary.accidentCount>0){
+      history.push(`${carfaxSummary.accidentCount} accident/damage record${carfaxSummary.accidentCount===1?'':'s'} reported`);
+    }else if(carfaxSummary.accidentReported||carfaxSummary.damageReported){
+      history.push('accident/damage reported');
     }else{
-      safety="NHTSA's public year/make/model recall search did not return a campaign for this combination at the time this description was generated. VIN-specific recall status should still be verified before sale.";
+      history.push('no accident/damage reported in the parsed CARFAX summary');
+    }
+    if(carfaxSummary.usage?.length)history.push(carfaxSummary.usage.join(', ')+' use');
+    if(history.length){
+      lines.push('CARFAX: '+history.join(' · '));
+      lines.push('');
     }
   }
 
   const closing=[];
-  if(vehicle.title_status)closing.push('Title: '+vehicle.title_status+'.');
-  if(vehicle.stock_number)closing.push('Philly Cars stock #'+vehicle.stock_number+'.');
-  if(vehicle.vin)closing.push('VIN: '+vehicle.vin+'.');
+  if(price>0)closing.push('Asking '+new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(price)+'.');
+  closing.push('Located in Philadelphia, PA.');
+  closing.push('Message us to schedule a viewing or test drive!');
+  lines.push(closing.join(' '));
 
-  return [intro.join(' '),specs,history,safety,closing.join(' ')]
-    .filter(Boolean)
-    .join('\n\n')
-    .trim();
+  return lines.join('\n').replace(/\n{3,}/g,'\n\n').trim();
 }
 
 async function generateAndPersistVehicleDescription(vehicleId,{knownCarfax=null,knownVinDecode=null}={}) {
@@ -318,7 +373,7 @@ async function generateAndPersistVehicleDescription(vehicleId,{knownCarfax=null,
   const description=buildVehicleDescription(vehicle,{carfaxSummary,vinDecode,recalls});
   const generatedAt=new Date().toISOString();
   const sources={
-    generator:'philly-cars-facts-v1',
+    generator:'philly-cars-marketplace-v2',
     generatedAt,
     carfax:carfaxSummary?{
       documentId:carfaxDocument?.id||null,
@@ -916,7 +971,7 @@ app.post('/api/v1/admin/import/carfax', { preHandler: requireAdmin }, async (req
     ]);
 
     const descriptionSources={
-      generator:'philly-cars-facts-v1',
+      generator:'philly-cars-marketplace-v2',
       generatedAt:descriptionGeneratedAt,
       carfax:{
         documentId:documentResult.rows[0].id,

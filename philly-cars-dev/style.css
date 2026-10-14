@@ -325,6 +325,23 @@ select option{background:#121722;color:#f3f6fb}
   .detailTopAfterGallery{margin-top:18px}
 }
 
+/* Desktop VDP gallery: preserve the original aspect ratio at full available width.
+   Unlike a fixed-height stage, this lets the entire photo remain visible. */
+@media (min-width:701px){
+  .vehicleSliderStage{
+    height:auto;
+    min-height:0;
+    display:block;
+  }
+  .vehicleSliderImage{
+    display:block;
+    width:100%;
+    height:auto;
+    max-height:none;
+    object-fit:contain;
+  }
+}
+
 /* P0-1: inquiry modal must never overflow the viewport */
 #leadModal{box-sizing:border-box;max-width:100vw;max-height:100dvh;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:clamp(10px,3vw,24px)}
 #leadModal .modalCard{box-sizing:border-box;width:min(560px,100%);max-width:100%;min-width:0;max-height:calc(100dvh - 2 * clamp(10px,3vw,24px));overflow-y:auto;overflow-x:hidden;padding:clamp(16px,3vw,24px)}

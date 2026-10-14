@@ -43,9 +43,19 @@ const absoluteApiOrigin=req=>String(process.env.PUBLIC_API_URL||(`${req.protocol
 const vehicleVdpUrl=vehicle=>PUBLIC_SITE_URL+'/#/car/'+encodeURIComponent(vehicle.slug);
 const absoluteVehicleImageUrl=(req,path)=>path?(path.startsWith('http')?path:absoluteApiOrigin(req)+path):'';
 
+// Public vehicle responses must never inherit new database columns automatically.
+// Only fields deliberately listed here may leave the server without admin auth.
+const PUBLIC_VEHICLE_COLUMNS=Object.freeze([
+  'id','slug','stock_number','vin','year','make','model','trim','price','mileage',
+  'body_style','exterior_color','interior_color','drivetrain','transmission','engine',
+  'fuel_type','title_status','status','description','features','mpg_combined',
+  'created_at','updated_at'
+]);
+const PUBLIC_VEHICLE_SELECT=PUBLIC_VEHICLE_COLUMNS.map(name=>'v.'+name).join(',\n      ');
+
 async function getDistributionInventory() {
   const result=await pool.query(`
-    SELECT v.*,
+    SELECT ${PUBLIC_VEHICLE_SELECT},
       (
         SELECT vi.path
         FROM vehicle_images vi
@@ -789,7 +799,7 @@ app.get('/api/v1/vehicles', async req => {
   if (maxPrice) add('price <= ?', Number(maxPrice));
   if (q) add(`(make || ' ' || model || ' ' || coalesce(trim,'')) ILIKE ?`, `%${q}%`);
   const result = await pool.query(`
-    SELECT v.*,
+    SELECT ${PUBLIC_VEHICLE_SELECT},
       COALESCE((
         SELECT jsonb_agg(jsonb_build_object(
           'id', vi.id,
@@ -810,7 +820,7 @@ app.get('/api/v1/vehicles', async req => {
 
 app.get('/api/v1/vehicles/:slug', async (req, reply) => {
   const result = await pool.query(`
-    SELECT v.*,
+    SELECT ${PUBLIC_VEHICLE_SELECT},
       COALESCE((
         SELECT jsonb_agg(jsonb_build_object(
           'id', vi.id,

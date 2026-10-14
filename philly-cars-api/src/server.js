@@ -788,7 +788,8 @@ app.addHook('preHandler', async (req, reply) => {
   if (!pool) return reply.code(503).send({ error: 'database_not_connected' });
 });
 
-app.get('/api/v1/vehicles', async req => {
+app.get('/api/v1/vehicles', async (req, reply) => {
+  reply.header('Cache-Control', 'no-store');
   const { make, body, year, maxPrice, q } = req.query || {};
   const where = [`status IN ('ready_to_publish','available','deposit')`];
   const values = [];
@@ -819,6 +820,7 @@ app.get('/api/v1/vehicles', async req => {
 });
 
 app.get('/api/v1/vehicles/:slug', async (req, reply) => {
+  reply.header('Cache-Control', 'no-store');
   const result = await pool.query(`
     SELECT ${PUBLIC_VEHICLE_SELECT},
       COALESCE((
